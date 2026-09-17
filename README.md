@@ -33,7 +33,7 @@ Desenvolver um sistema web simples e funcional para facilitar o gerenciamento e 
 - Impedir reservas conflitantes para a mesma sala e horário.
 - Permitir cancelamento de reservas, caso essa funcionalidade seja implementada.
 ## 4. Funcionamento do sistema
-'''
+<pre>
 Professor
    ↓
 Acessa o sistema web
@@ -62,8 +62,10 @@ Banco de dados salva a reserva
    ↓
 Agenda é atualizada
    ↓
-Sala aparece como ocupada '''
-Um ponto importante: a sala não deve ser realmente retirada do banco de dados quando estiver ocupada. O banco continua contendo a sala. O que muda é a disponibilidade daquela sala naquele horário.
+Sala aparece como ocupada </pre>
+
+# Um ponto importante: a sala não deve ser realmente retirada do banco de dados quando estiver ocupada. O banco continua contendo a sala. O que muda é a disponibilidade daquela sala naquele horário.
+<pre>
 Sala 201
 Capacidade: 40
 Projetor: Sim
@@ -73,8 +75,10 @@ Ar-condicionado: Sim
 09:00 → Ocupada
 10:00 → Livre
 11:00 → Livre
-5. Arquitetura recomendada
+   </pre>
+## 5. Arquitetura recomendada
 A arquitetura recomendada é uma arquitetura de três camadas, com frontend separado do backend e do banco de dados.
+<pre>
 ┌──────────────────────────────┐
 │          FRONTEND            │
 │        React + Vite          │
@@ -107,37 +111,46 @@ A arquitetura recomendada é uma arquitetura de três camadas, com frontend sepa
 │  Equipamentos                │
 │  Reservas                    │
 └──────────────────────────────┘
-A separação é importante porque cada parte possui uma responsabilidade: o frontend mostra a interface; o backend executa a lógica; o banco armazena os dados.
-6. Tecnologias
-Camada
-Tecnologia
-Frontend
-React
-Build
-Vite
-Backend
-Python + FastAPI
-ORM
-SQLAlchemy
-Validação
-Pydantic
-Banco
-PostgreSQL
-API
-REST/JSON
-Agenda
-Componente de calendário React
-Fotos
-Arquivos estáticos ou armazenamento externo
+   </pre>
+A separação é importante porque cada parte possui uma responsabilidade: 
+- o frontend mostra a interface;
+- o backend executa a lógica;
+- o banco armazena os dados.
+## 6. Tecnologias
 
-React será utilizado para construir a interface e organizar a aplicação em componentes. Vite será usado no desenvolvimento e build do frontend. FastAPI será usado para expor a API REST, validar dados e concentrar as regras de negócio. SQLAlchemy fará a comunicação entre Python e PostgreSQL. Pydantic será usado para os schemas de entrada e saída da API.
-7. Frontend
-7.1 React
+# Frontend
+- React
+- Build
+- Vite
+# Backend
+- Python + FastAPI
+- ORM
+- SQLAlchemy
+- Validação
+- Pydantic
+- Banco
+- PostgreSQL
+- API
+- REST/JSON
+- Agenda
+- Componente de calendário React
+- Fotos
+- Arquivos estáticos ou armazenamento externo
+
+React será utilizado para construir a interface e organizar a aplicação em componentes.
+Vite será usado no desenvolvimento e build do frontend.
+FastAPI será usado para expor a API REST, validar dados e concentrar as regras de negócio. 
+SQLAlchemy fará a comunicação entre Python e PostgreSQL.
+Pydantic será usado para os schemas de entrada e saída da API.
+
+## 7. Frontend
+# 7.1 React
 O React será responsável pela interface do sistema. A aplicação poderá ser dividida em componentes como Calendar, RoomCard, RoomDetails e ReservationModal.
-7.2 Vite
+# 7.2 Vite
 O Vite será utilizado para criar o projeto React, fornecer o servidor de desenvolvimento e gerar o build de produção.
-8. Backend
-FastAPI é recomendado para o backend por combinar bem com Python e por facilitar a criação de APIs REST, validação com Pydantic e documentação interativa da API. A documentação automática também será útil durante os testes do projeto.
+## 8. Backend
+# FastAPI é recomendado para o backend por combinar bem com Python e por facilitar a criação de APIs REST, validação com Pydantic e documentação interativa da API. A documentação automática também será útil durante os testes do projeto.
+<pre>
 React
    ↓
 GET /salas
@@ -145,9 +158,11 @@ GET /salas
 FastAPI
    ↓
 PostgreSQL
-9. Banco de dados
+   </pre>
+## 9. Banco de dados
 PostgreSQL é recomendado como banco de dados principal. Ele atende melhor a um sistema que pode receber vários usuários e reservas simultâneas do que uma solução local simples como SQLite.
-10. Estrutura do banco de dados
+## 10. Estrutura do banco de dados
+<pre>
 PROFESSORES
 -----------
 id
@@ -182,7 +197,10 @@ hora_inicio
 hora_fim
 status
 created_at
-11. Relacionamento entre as tabelas
+   </pre>
+   
+## 11. Relacionamento entre as tabelas
+<pre> 
 PROFESSOR
    │
    │ 1
@@ -199,14 +217,19 @@ PROFESSOR
    │
    │ N
 EQUIPAMENTO
+   </pre>
 Um professor pode realizar várias reservas. Uma sala também pode possuir várias reservas em horários diferentes.
+<pre>
 Sala 202
 
 08:00 → Professor A
 09:00 → Professor B
 10:00 → Livre
 11:00 → Professor C
-12. Modelo da tabela de salas
+   </pre>
+   
+## 12. Modelo da tabela de salas
+<pre>
 class Room(Base):
     __tablename__ = "rooms"
 
@@ -215,7 +238,10 @@ class Room(Base):
     description = Column(String, nullable=True)
     capacity = Column(Integer, nullable=False)
     photo_url = Column(String, nullable=True)
+   </pre>
+   
 Exemplo de registro:
+<pre>
 id: 1
 name: "Laboratório 01"
 description: "Laboratório de informática"
@@ -228,8 +254,10 @@ class Professor(Base):
     id = Column(Integer, primary_key=True)
     rm = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
+   </pre>
 O RM deve ser único. O atributo unique=True impede que o mesmo RM seja cadastrado mais de uma vez.
-14. Modelo de reserva
+## 14. Modelo de reserva
+<pre>
 class Reservation(Base):
     __tablename__ = "reservations"
 
@@ -262,8 +290,12 @@ class Reservation(Base):
         DateTime(timezone=True),
         server_default=func.now()
     )
-15. Como funcionará a reserva
+   </pre>
+   
+## 15. Como funcionará a reserva
+
 Suponha que o professor queira reservar uma sala para uma aula de uma hora:
+<pre>
 Sala: Laboratório 02
 Data: 15/09/2026
 Horário: 14:00 - 15:00
@@ -276,7 +308,9 @@ O React enviará os dados para a API:
     "start_time": "14:00",
     "end_time": "15:00"
 }
+   </pre>
 A API verifica a existência do professor, a existência da sala e a disponibilidade no horário. Somente depois disso a reserva é criada e salva.
+<pre>
 Existe professor com RM 123456?
         ↓
        SIM
@@ -294,8 +328,10 @@ Criar reserva
 Salvar no PostgreSQL
         ↓
 Retornar sucesso
-16. Regra mais importante: evitar conflito
+   </pre>
+## 16. Regra mais importante: evitar conflito
 A principal regra de negócio é impedir duas reservas que ocupem a mesma sala no mesmo intervalo de tempo.
+<pre>
 Sala 101
 10:00 - 11:00
 
@@ -311,9 +347,11 @@ Resposta sugerida da API:
 {
     "detail": "Sala não disponível neste horário."
 }
+   </pre>
 Essa validação deve existir no backend, e a integridade do banco também deve ser considerada para reduzir riscos de inconsistência.
-17. Como a agenda funcionará
+## 17. Como a agenda funcionará
 Como a reserva é por hora, recomenda-se combinar uma visão mensal com uma visão diária/por horário. A visão mensal permite enxergar a ocupação geral e, ao clicar em um dia, a interface mostra os horários e salas disponíveis.
+<pre>
 Visão mensal
 
 Setembro 2026
@@ -334,8 +372,11 @@ Visão diária - 15/09/2026
 
 10:00    Sala 101 ✅
          Lab 01 ❌
+
+   </pre>
 Uma biblioteca de calendário em React pode ajudar nessa parte. É importante escolher uma solução compatível com o escopo do projeto e evitar dependências premium desnecessárias.
-18. Tela de salas
+## 18. Tela de salas
+<pre>
 SALAS DISPONÍVEIS
 
 ┌─────────────────────┐
@@ -351,7 +392,9 @@ SALAS DISPONÍVEIS
 │                     │
 │       [Reservar]    │
 └─────────────────────┘
-19. Fluxo de escolha da sala
+   </pre>
+## 19. Fluxo de escolha da sala
+<pre>
 ESCOLHER DATA
       ↓
 ESCOLHER HORÁRIO
@@ -367,8 +410,10 @@ MOSTRA DETALHES
 INFORMA RM
       ↓
 CONFIRMA
-20. API
-20.1 Salas
+   </pre>
+## 20. API
+# 20.1 Salas
+<pre>
 GET /rooms
 Lista todas as salas.
 
@@ -418,7 +463,9 @@ POST /reservations
     "start_time": "14:00",
     "end_time": "15:00"
 }
-21. Estrutura do backend
+   </pre>
+## 21. Estrutura do backend
+<pre>
 backend/
 │
 ├── main.py
@@ -444,8 +491,10 @@ backend/
 │   └── reservation_service.py
 │
 └── requirements.txt
+   </pre>
 Essa estrutura mantém models, schemas, rotas e regras de negócio separados. Isso facilita manutenção e evolução do projeto.
-22. Estrutura do frontend
+## 22. Estrutura do frontend
+<pre>
 frontend/
 │
 ├── src/
@@ -467,7 +516,9 @@ frontend/
 │
 ├── App.jsx
 └── main.jsx
-23. Página inicial
+   </pre>
+## 23. Página inicial
+<pre>
 ┌───────────────────────────────────────────────┐
 │ LOGO       Salas    Agenda       Reservar     │
 ├───────────────────────────────────────────────┤
@@ -478,6 +529,7 @@ frontend/
 │ Salas disponíveis hoje: 12                    │
 │ Reservas hoje: 24                             │
 └───────────────────────────────────────────────┘
+   </pre>
 24. Integração React → Python
 No React, a comunicação com o backend pode ser feita com fetch ou Axios. Exemplo de consulta de salas:
 const response = await fetch(
