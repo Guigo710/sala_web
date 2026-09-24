@@ -143,10 +143,10 @@ FastAPI será usado para expor a API REST, validar dados e concentrar as regras 
 SQLAlchemy fará a comunicação entre Python e PostgreSQL.
 Pydantic será usado para os schemas de entrada e saída da API.
 
-## 7. Frontend
-# 7.1 React
+# 7. Frontend
+## 7.1 React
 O React será responsável pela interface do sistema. A aplicação poderá ser dividida em componentes como Calendar, RoomCard, RoomDetails e ReservationModal.
-# 7.2 Vite
+## 7.2 Vite
 O Vite será utilizado para criar o projeto React, fornecer o servidor de desenvolvimento e gerar o build de produção.
 ## 8. Backend
 - FastAPI é recomendado para o backend por combinar bem com Python e por facilitar a criação de APIs REST, validação com Pydantic e documentação interativa da API. A documentação automática também será útil durante os testes do projeto.
