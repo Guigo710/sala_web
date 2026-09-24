@@ -64,7 +64,7 @@ Agenda é atualizada
    ↓
 Sala aparece como ocupada </pre>
 
-# Um ponto importante: a sala não deve ser realmente retirada do banco de dados quando estiver ocupada. O banco continua contendo a sala. O que muda é a disponibilidade daquela sala naquele horário.
+- Um ponto importante: a sala não deve ser realmente retirada do banco de dados quando estiver ocupada. O banco continua contendo a sala. O que muda é a disponibilidade daquela sala naquele horário.
 <pre>
 Sala 201
 Capacidade: 40
