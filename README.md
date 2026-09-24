@@ -530,86 +530,184 @@ frontend/
 │ Reservas hoje: 24                             │
 └───────────────────────────────────────────────┘
    </pre>
-24. Integração React → Python
-No React, a comunicação com o backend pode ser feita com fetch ou Axios. Exemplo de consulta de salas:
+## 24. Integração React → Python
+
+No React, a comunicação com o backend pode ser feita com `fetch` ou Axios.
+
+### Consulta de salas
+
+```javascript
 const response = await fetch(
-    "http://localhost:8000/rooms"
+  "http://localhost:8000/rooms"
 );
 
 const rooms = await response.json();
+
 setRooms(rooms);
-Exemplo de envio de uma reserva:
+```
+
+### Envio de uma reserva
+
+```javascript
 await fetch(
-    "http://localhost:8000/reservations",
-    {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(reservation)
-    }
+  "http://localhost:8000/reservations",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(reservation)
+  }
 );
-25. Fluxo completo da integração
+```
+
+---
+
+## 25. Fluxo completo da integração
+
+```text
 NAVEGADOR
-     │
-     ▼
+    │
+    ▼
 React + Vite
-     │
-     │ HTTP
-     ▼
+    │
+    │ HTTP
+    ▼
 FastAPI
-     │
-┌────┴─────┐
-▼          ▼
-SQLAlchemy  Regras
-│          │
-└────┬─────┘
-     ▼
-PostgreSQL
-     │
-     ▼
-   Dados
-26. Passo a passo de implementação
-A recomendação é não começar pela agenda. Comece pelo banco e pela API, valide o fluxo de reservas e só depois construa a interface.
-Etapa 1 — Criar o backend
-Criar a pasta backend e instalar as dependências básicas.
+    │
+    ├──────────────┐
+    ▼              ▼
+SQLAlchemy      Regras
+    │              │
+    └──────┬───────┘
+           ▼
+      PostgreSQL
+           │
+           ▼
+         Dados
+```
+
+---
+
+## 26. Passo a passo de implementação
+
+A recomendação é **não começar pela agenda**. Comece pelo banco e pela API, valide o fluxo de reservas e só depois construa a interface.
+
+### Etapa 1 — Criar o backend
+
+Criar a pasta `backend` e instalar as dependências básicas:
+
+```bash
 pip install fastapi uvicorn sqlalchemy psycopg2-binary pydantic
-Etapa 2 — Configurar PostgreSQL
-Criar o banco school_rooms e configurar conexão com usuário, senha e porta.
-Host: localhost
-Port: 5432
-Database: school_rooms
-User: postgres
-Password: sua_senha
+```
+
+### Etapa 2 — Configurar PostgreSQL
+
+Criar o banco `school_rooms` e configurar a conexão com usuário, senha e porta.
+
+| Configuração | Valor          |
+| ------------ | -------------- |
+| Host         | `localhost`    |
+| Port         | `5432`         |
+| Database     | `school_rooms` |
+| User         | `postgres`     |
+| Password     | `sua_senha`    |
+
+Exemplo de `DATABASE_URL`:
+
+```env
 DATABASE_URL=postgresql://postgres:senha@localhost:5432/school_rooms
-Etapa 3 — Criar os Models
-Começar pelos Models Professor, Room, Equipment e Reservation, incluindo os relacionamentos.
-Etapa 4 — Criar o CRUD de salas
-Fazer funcionar cadastro, consulta, alteração e exclusão de salas.
+```
+
+### Etapa 3 — Criar os Models
+
+Começar pelos Models:
+
+* `Professor`
+* `Room`
+* `Equipment`
+* `Reservation`
+
+Incluindo os respectivos relacionamentos.
+
+### Etapa 4 — Criar o CRUD de salas
+
+Fazer funcionar o cadastro, consulta, alteração e exclusão de salas.
+
+```http
 POST /rooms
 GET /rooms
 GET /rooms/{id}
 PUT /rooms/{id}
 DELETE /rooms/{id}
-Etapa 5 — Criar professores
+```
+
+### Etapa 5 — Criar professores
+
 Cadastrar professor e consultar pelo RM.
+
+```http
 POST /professors
 GET /professors/123456
-Etapa 6 — Criar reservas
-Implementar POST /reservations com a verificação de conflito antes de gravar.
-Etapa 7 — Criar consulta de disponibilidade
-Receber data e intervalo de horário, consultar reservas e retornar somente as salas livres.
-Etapa 8 — Criar o frontend
-Criar o projeto React com Vite e começar pela navegação, lista de salas e detalhes.
-Etapa 9 — Criar a página de salas
-Mostrar foto, capacidade, equipamentos e botão de reservar.
-Etapa 10 — Criar a agenda
+```
+
+### Etapa 6 — Criar reservas
+
+Implementar:
+
+```http
+POST /reservations
+```
+
+O endpoint deve realizar a **verificação de conflito antes de gravar a reserva**.
+
+### Etapa 7 — Criar consulta de disponibilidade
+
+Receber a data e o intervalo de horário, consultar as reservas existentes e retornar somente as salas livres.
+
+### Etapa 8 — Criar o frontend
+
+Criar o projeto React com Vite e começar pela:
+
+* Navegação
+* Lista de salas
+* Detalhes das salas
+
+### Etapa 9 — Criar a página de salas
+
+Mostrar:
+
+* Foto
+* Capacidade
+* Equipamentos
+* Botão de reservar
+
+### Etapa 10 — Criar a agenda
+
 Buscar as reservas por mês e transformá-las em eventos na interface.
-Etapa 11 — Criar o modal de reserva
-Selecionar sala, data, horário e informar o RM do professor.
-Etapa 12 — Confirmar reserva
-Ao clicar em Confirmar, enviar POST /reservations, tratar a resposta e atualizar a agenda.
-27. Exemplo do modal de reserva
+
+### Etapa 11 — Criar o modal de reserva
+
+Permitir:
+
+* Selecionar sala
+* Selecionar data
+* Selecionar horário
+* Informar o RM do professor
+
+### Etapa 12 — Confirmar reserva
+
+Ao clicar em **Confirmar**:
+
+1. Enviar `POST /reservations`;
+2. Tratar a resposta da API;
+3. Atualizar a agenda.
+
+---
+
+## 27. Exemplo do modal de reserva
+
+```text
 ┌─────────────────────────────┐
 │ Reservar sala               │
 ├─────────────────────────────┤
@@ -618,43 +716,74 @@ Ao clicar em Confirmar, enviar POST /reservations, tratar a resposta e atualizar
 │ Horário: 14:00 - 15:00      │
 │ RM do professor:            │
 │ [____________________]      │
+│                             │
 │ [Cancelar] [Confirmar]      │
 └─────────────────────────────┘
-28. O que acontece com a agenda depois
-Antes:
+```
+
+---
+
+## 28. O que acontece com a agenda depois
+
+### Antes da reserva
+
+```text
 Sala 201
 14:00 🟢 Livre
+```
 
-Depois da reserva:
+### Depois da reserva
+
+```text
 Sala 201
 14:00 🔴 Reservada
-Outra pessoa que consultar o mesmo horário não verá a Sala 201 como disponível.
-29. Funcionalidades para a primeira versão
+```
+
+Outra pessoa que consultar o mesmo horário **não verá a Sala 201 como disponível**.
+
+---
+
+## 29. Funcionalidades para a primeira versão
+
 Para manter o projeto adequado ao contexto de uma disciplina, a versão inicial pode incluir somente:
-Cadastro de salas
-Foto da sala
-Capacidade
-Equipamentos
-Cadastro de professores
-RM
-Agenda mensal
-Horários
-Consulta de disponibilidade
-Reserva
-Bloqueio de conflito
-Atualização da agenda
-PostgreSQL
-Funcionalidades que podem ficar para versões futuras:
-Login
-Permissões
-Administrador
-Histórico
-Relatórios
-Notificações
-Exportação PDF
-E-mails
-Manutenção de salas
-30. Funcionalidade opcional: administrador
+
+### Funcionalidades principais
+
+* Cadastro de salas
+* Foto da sala
+* Capacidade
+* Equipamentos
+* Cadastro de professores
+* RM
+* Agenda mensal
+* Horários
+* Consulta de disponibilidade
+* Reserva
+* Bloqueio de conflito
+* Atualização da agenda
+* PostgreSQL
+
+### Funcionalidades futuras
+
+As seguintes funcionalidades podem ser implementadas em versões futuras:
+
+* Login
+* Permissões
+* Administrador
+* Histórico
+* Relatórios
+* Notificações
+* Exportação em PDF
+* E-mails
+* Manutenção de salas
+
+---
+
+## 30. Funcionalidade opcional: administrador
+
+Uma possível separação de funcionalidades seria:
+
+```text
 ADMIN
  │
  ├── Cadastrar sala
@@ -664,79 +793,124 @@ ADMIN
  ├── Cadastrar professor
  └── Ver todas as reservas
 
+
 PROFESSOR
  │
  ├── Ver agenda
  ├── Consultar salas
  ├── Reservar
  └── Cancelar sua reserva
-Isso cria uma separação simples entre funções administrativas e uso cotidiano dos professores.
-31. Segurança
-Mesmo em um projeto acadêmico, não é recomendável confiar exclusivamente no RM enviado pelo navegador. Na primeira versão, o RM pode funcionar como identificação. Em uma versão futura, o sistema pode utilizar login, senha e token de autenticação. O FastAPI possui recursos para implementar esquemas como OAuth2 e Bearer Token.
-32. Arquitetura final recomendada
-USUÁRIO
-    │
-    ▼
-┌─────────────────┐
-│     REACT       │
-│      VITE       │
-└────────┬────────┘
-         │ HTTP / JSON
-         ▼
-┌─────────────────┐
-│     FASTAPI     │
-│                 │
-│ Controllers     │
-│ Services        │
-│ Schemas         │
-│ Validações      │
-└────────┬────────┘
-         │
-     SQLAlchemy
-         │
-         ▼
-┌─────────────────┐
-│   POSTGRESQL    │
-│                 │
-│ Professores     │
-│ Salas           │
-│ Equipamentos    │
-│ Reservas        │
-└─────────────────┘
-A abordagem pode ser apresentada como arquitetura cliente-servidor com API REST e separação em camadas.
-33. Resumo da solução
-SISTEMA WEB
-     │
-┌────┴──────────────┐
-│                   │
-AGENDA             SALAS
-│                   │
-Visualizar mês      Foto da sala
-Ver horários        Capacidade
-Ver reservas        Equipamentos
-│                   │
-└────────┬──────────┘
-         │
-      RESERVA
-         │
-   Data + Horário
-         │
-     Escolher sala
-         │
-       Informar RM
-         │
-       Confirmar
-         │
-         ▼
-      DATABASE
-         │
-         ▼
-  AGENDA ATUALIZADA
-Stack final: React + Vite no frontend; Python + FastAPI no backend; SQLAlchemy como ORM; Pydantic para validação; PostgreSQL no banco; API REST/JSON para comunicação; e um componente de calendário React para a agenda.
-34. Fontes técnicas consultadas
-React — documentação oficial: https://react.dev/learn
-Vite — documentação oficial: https://vite.dev/guide/
-FastAPI — SQL Databases: https://fastapi.tiangolo.com/tutorial/sql-databases/
-FastAPI — Security: https://fastapi.tiangolo.com/tutorial/security/
-PostgreSQL — Constraints: https://www.postgresql.org/docs/16/ddl-constraints.html
-FullCalendar — Timeline View: https://fullcalendar.io/docs/timeline-view
+```
+
+Isso cria uma separação simples entre **funções administrativas** e **uso cotidiano dos professores**.
+
+---
+
+## 31. Segurança
+
+Mesmo em um projeto acadêmico, não é recomendável confiar exclusivamente no RM enviado pelo navegador.
+
+Na primeira versão, o RM pode funcionar como identificação. Em uma versão futura, o sistema pode utilizar:
+
+* Login
+* Senha
+* Token de autenticação
+
+O FastAPI possui recursos para implementar esquemas de autenticação como **OAuth2** e **Bearer Token**.
+
+---
+
+## 32. Arquitetura final recomendada
+
+```text
+                    USUÁRIO
+                       │
+                       ▼
+              ┌─────────────────┐
+              │      REACT      │
+              │       VITE      │
+              └────────┬────────┘
+                       │
+                  HTTP / JSON
+                       │
+                       ▼
+              ┌─────────────────┐
+              │     FASTAPI     │
+              │                 │
+              │  Controllers    │
+              │  Services       │
+              │  Schemas        │
+              │  Validações     │
+              └────────┬────────┘
+                       │
+                   SQLAlchemy
+                       │
+                       ▼
+              ┌─────────────────┐
+              │   POSTGRESQL    │
+              │                 │
+              │  Professores    │
+              │  Salas          │
+              │  Equipamentos   │
+              │  Reservas       │
+              └─────────────────┘
+```
+
+A abordagem pode ser apresentada como uma **arquitetura cliente-servidor com API REST e separação em camadas**.
+
+---
+
+## 33. Resumo da solução
+
+```text
+                    SISTEMA WEB
+                         │
+             ┌───────────┴───────────┐
+             │                       │
+           AGENDA                   SALAS
+             │                       │
+       Visualizar mês          Foto da sala
+       Ver horários            Capacidade
+       Ver reservas            Equipamentos
+             │                       │
+             └───────────┬───────────┘
+                         │
+                      RESERVA
+                         │
+                   Data + Horário
+                         │
+                    Escolher sala
+                         │
+                      Informar RM
+                         │
+                      Confirmar
+                         │
+                         ▼
+                      DATABASE
+                         │
+                         ▼
+                  AGENDA ATUALIZADA
+```
+
+### Stack final
+
+| Camada         | Tecnologia                     |
+| -------------- | ------------------------------ |
+| Frontend       | React + Vite                   |
+| Backend        | Python + FastAPI               |
+| ORM            | SQLAlchemy                     |
+| Validação      | Pydantic                       |
+| Banco de dados | PostgreSQL                     |
+| Comunicação    | API REST / JSON                |
+| Agenda         | Componente de calendário React |
+
+---
+
+## 34. Fontes técnicas consultadas
+
+* [React — Documentação oficial](https://react.dev/learn)
+* [Vite — Documentação oficial](https://vite.dev/guide/)
+* [FastAPI — SQL Databases](https://fastapi.tiangolo.com/tutorial/sql-databases/)
+* [FastAPI — Security](https://fastapi.tiangolo.com/tutorial/security/)
+* [PostgreSQL — Constraints](https://www.postgresql.org/docs/16/ddl-constraints.html)
+* [FullCalendar — Timeline View](https://fullcalendar.io/docs/timeline-view)
