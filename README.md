@@ -149,7 +149,7 @@ O React será responsável pela interface do sistema. A aplicação poderá ser 
 # 7.2 Vite
 O Vite será utilizado para criar o projeto React, fornecer o servidor de desenvolvimento e gerar o build de produção.
 ## 8. Backend
-# FastAPI é recomendado para o backend por combinar bem com Python e por facilitar a criação de APIs REST, validação com Pydantic e documentação interativa da API. A documentação automática também será útil durante os testes do projeto.
+- FastAPI é recomendado para o backend por combinar bem com Python e por facilitar a criação de APIs REST, validação com Pydantic e documentação interativa da API. A documentação automática também será útil durante os testes do projeto.
 <pre>
 React
    ↓
@@ -412,6 +412,7 @@ INFORMA RM
 CONFIRMA
    </pre>
 ## 20. API
+
 # 20.1 Salas
 <pre>
 GET /rooms
