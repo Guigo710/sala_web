@@ -118,3 +118,72 @@ def aulas_manha(client):
 @pytest.fixture
 def sala_id(client):
     return client.get("/salas", params={"busca": "Laboratório 01"}).json()[0]["id"]
+
+
+# ---------------------------------------------------------------- apoio da suíte do Sentinela
+from datetime import datetime  # noqa: E402
+
+import app.core.tempo as _tempo  # noqa: E402
+
+
+class Relogio:
+    """"Agora" controlado: `app.core.tempo.agora_tz` passa a devolver o instante definido.
+
+    `agora()`/`hoje()` (usados por services, rotas e regras de cancelamento) derivam dele.
+    A emissão/validação de JWT continua no relógio real, então tokens não expiram por causa do teste.
+    """
+
+    def __init__(self) -> None:
+        self.instante: datetime | None = None
+
+    def definir(self, data: date, hora: str = "10:00") -> None:
+        h, m = (int(x) for x in hora.split(":"))
+        self.instante = datetime(data.year, data.month, data.day, h, m, tzinfo=_tempo.fuso())
+
+    def __call__(self) -> datetime:
+        assert self.instante is not None, "use relogio.definir(...) antes"
+        return self.instante
+
+
+# Data de referência dos testes com tempo controlado: terça-feira, dentro do semestre "2030-1".
+TERCA_REF = date(2030, 3, 5)
+SEMESTRE_REF = {"nome": "2030-1", "data_inicio": "2030-02-04", "data_fim": "2030-06-25"}  # 25/06/2030 é terça
+
+
+@pytest.fixture
+def relogio(monkeypatch):
+    r = Relogio()
+    r.definir(TERCA_REF, "06:00")
+    monkeypatch.setattr(_tempo, "agora_tz", r)
+    return r
+
+
+@pytest.fixture
+def semestre_ref(client, admin):
+    r = client.post("/semestres", headers=admin, json=SEMESTRE_REF)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def token_de(client: TestClient, rm: str, senha: str) -> dict[str, str]:
+    return _token(client, rm, senha)
+
+
+@pytest.fixture
+def novo_professor(client, admin):
+    """Fábrica: cria um professor (via API) e devolve (headers, usuario)."""
+
+    def _criar(rm: str, nome: str | None = None, senha: str = "senhaProf1", papel: str = "professor"):
+        r = client.post(
+            "/professores", headers=admin, json={"rm": rm, "nome": nome or f"Prof {rm}", "senha": senha, "papel": papel}
+        )
+        assert r.status_code == 201, r.text
+        return _token(client, rm, senha), r.json()
+
+    return _criar
+
+
+@pytest.fixture
+def aulas(client):
+    """{'manha': [ids por ordem], 'tarde': [...], 'noite': [...]}"""
+    return {t: [h["id"] for h in client.get("/horarios", params={"turno": t}).json()] for t in ("manha", "tarde", "noite")}
