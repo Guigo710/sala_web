@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { urlArquivo } from '../api/cliente';
 import { corDoTipo } from '../utils/formatacao';
 

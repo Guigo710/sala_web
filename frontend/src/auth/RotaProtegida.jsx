@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router';
 import Carregando from '../components/Carregando';
 import { useAuth } from './contexto';
 

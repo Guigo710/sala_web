@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router';
 import { obterSala } from '../api/salas';
 import { useAuth } from '../auth/contexto';
 import { useCarregar } from '../hooks/useCarregar';

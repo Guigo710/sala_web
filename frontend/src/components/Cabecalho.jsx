@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router';
 import { useAuth } from '../auth/contexto';
 
 export default function Cabecalho() {

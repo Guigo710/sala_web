@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// O dev server escuta em 0.0.0.0:5173 (ver Dockerfile e docker-compose.yml).
+// Dev server (npm run dev) só para desenvolvimento: escuta apenas em localhost (ticket 42: ele expõe o
+// código-fonte e não deve ficar acessível pela rede; use `npm run dev -- --host` se precisar de outro aparelho).
+// A imagem Docker serve o build com nginx (Dockerfile, nginx.conf). O preview serve dist/ (CI e E2E).
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: '0.0.0.0',
+    host: 'localhost',
     port: 5173,
     strictPort: true,
   },

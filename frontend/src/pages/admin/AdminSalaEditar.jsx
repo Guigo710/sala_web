@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router';
 import { atualizarSala, criarSala, obterSala } from '../../api/salas';
 import { useCarregar } from '../../hooks/useCarregar';
 import { useTipos } from '../../hooks/useTipos';

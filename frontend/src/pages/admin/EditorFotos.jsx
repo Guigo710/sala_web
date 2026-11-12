@@ -5,8 +5,8 @@ import { useAvisos } from '../../components/avisos';
 import { useConfirmar } from '../../components/useConfirmar';
 import ErroApiAlerta from '../../components/ErroApiAlerta';
 import { mensagemDeErro } from '../../utils/formatacao';
+import { TIPOS_FOTO, limiteUploadMb, validarFoto } from '../../utils/fotos';
 
-const TIPOS_ACEITOS = 'image/jpeg,image/png,image/webp';
 let proximaChave = 1;
 
 function ItemFoto({ foto, indice, total, salaId, aoMover, aoRemover, aoAtualizar }) {
@@ -102,18 +102,23 @@ export default function EditorFotos({ sala }) {
     const arquivos = [...e.target.files];
     e.target.value = '';
     if (arquivos.length === 0) return;
-    const novos = arquivos.map((arquivo) => ({
-      chave: proximaChave++,
-      arquivo,
-      nome: arquivo.name,
-      progresso: 0,
-      estado: 'aguardando',
-      erro: null,
-    }));
+    // O `accept` só filtra o diálogo; arquivo fora do tipo ou do tamanho nem vai para a API.
+    const novos = arquivos.map((arquivo) => {
+      const erroLocal = validarFoto(arquivo);
+      return {
+        chave: proximaChave++,
+        arquivo,
+        nome: arquivo.name,
+        progresso: 0,
+        estado: erroLocal ? 'erro' : 'aguardando',
+        erro: erroLocal,
+      };
+    });
     setEnvios((lista) => [...lista.filter((x) => x.estado !== 'ok'), ...novos]);
     setEnviando(true);
     let enviadas = 0;
     for (const item of novos) {
+      if (item.erro) continue;
       atualizarEnvio(item.chave, { estado: 'enviando' });
       try {
         const foto = await enviarFoto(sala.id, item.arquivo, null, (p) =>
@@ -171,7 +176,7 @@ export default function EditorFotos({ sala }) {
           ref={entrada}
           id="fotos-arquivos"
           type="file"
-          accept={TIPOS_ACEITOS}
+          accept={TIPOS_FOTO.join(',')}
           multiple
           className="sr-only"
           onChange={aoEscolher}
@@ -180,7 +185,7 @@ export default function EditorFotos({ sala }) {
         <label htmlFor="fotos-arquivos" className={enviando ? 'botao desabilitado' : 'botao'}>
           Enviar fotos…
         </label>
-        <span className="texto-suave">JPEG, PNG ou WebP. Você pode escolher várias de uma vez.</span>
+        <span className="texto-suave">JPEG, PNG ou WebP, até {limiteUploadMb()} MB cada. Você pode escolher várias de uma vez.</span>
       </div>
 
       {envios.length > 0 && (

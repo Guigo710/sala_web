@@ -6,7 +6,14 @@
 import { API_URL, definirTransporte } from '../cliente';
 import { criarDadosIniciais } from './dados';
 
-const db = criarDadosIniciais();
+let db = criarDadosIniciais();
+
+/** Só para testes: volta aos dados iniciais e liga/desliga a latência simulada. */
+export function reiniciarMock({ atraso = true } = {}) {
+  db = criarDadosIniciais();
+  comAtraso = atraso;
+}
+let comAtraso = true;
 const TURNO_ORDEM = { manha: 0, tarde: 1, noite: 2 };
 
 class Falha {
@@ -54,7 +61,7 @@ const pessoa = (id) => {
   const p = db.professores.find((x) => x.id === id);
   return p ? { id: p.id, nome: p.nome } : null;
 };
-const usuarioJson = ({ senha: _senha, ...resto }) => resto;
+const usuarioJson = ({ senha: _senha, token_versao: _versao, ...resto }) => resto;
 const fotosDaSala = (salaId) =>
   db.fotos.filter((f) => f.sala_id === salaId).sort((a, b) => a.ordem - b.ordem || a.id - b.id);
 const salaResumo = (s) => ({
@@ -136,12 +143,24 @@ const ordenarHorarios = (lista) =>
   [...lista].sort((a, b) => TURNO_ORDEM[a.turno] - TURNO_ORDEM[b.turno] || a.ordem - b.ordem);
 
 // ---------- autenticação ----------
+// Token simulado `mock.<id>.<versão>`: como a claim `ver` do JWT (ADR-0008), só vale enquanto a
+// versão for igual a `token_versao` da conta. Incrementar a versão derruba todas as sessões da conta.
+const versaoDe = (u) => u.token_versao ?? 0;
+const revogarTokens = (u) => {
+  u.token_versao = versaoDe(u) + 1;
+};
+const emitirSessao = (u) => ({
+  access_token: `mock.${u.id}.${versaoDe(u)}`,
+  token_type: 'bearer',
+  expira_em: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+  usuario: usuarioJson(u),
+});
 function usuarioDoToken(headers) {
   const auth = headers.Authorization || headers.authorization;
-  const m = auth && /^Bearer mock\.(\d+)$/.exec(auth);
+  const m = auth && /^Bearer mock\.(\d+)\.(\d+)$/.exec(auth);
   if (!m) return null;
   const u = db.professores.find((p) => p.id === Number(m[1]));
-  return u && u.ativo ? u : null;
+  return u && u.ativo && versaoDe(u) === Number(m[2]) ? u : null;
 }
 const exigirProfessor = (u) => u || falha(401, 'NAO_AUTENTICADO', 'Faça login para continuar.');
 const exigirAdmin = (u) => {
@@ -251,8 +270,7 @@ rota('GET', '/saude', () => ({ status: 'ok' }));
 rota('POST', '/auth/login', ({ corpo }) => {
   const u = db.professores.find((p) => p.rm === corpo?.rm);
   if (!u || u.senha !== corpo?.senha || !u.ativo) falha(401, 'CREDENCIAIS_INVALIDAS', 'RM ou senha inválidos.');
-  const expira = new Date(Date.now() + 8 * 3600 * 1000).toISOString();
-  return { access_token: `mock.${u.id}`, token_type: 'bearer', expira_em: expira, usuario: usuarioJson(u) };
+  return emitirSessao(u);
 });
 rota('GET', '/auth/me', ({ u }) => usuarioJson(exigirProfessor(u)));
 rota('PUT', '/auth/me/senha', ({ u, corpo }) => {
@@ -260,7 +278,8 @@ rota('PUT', '/auth/me/senha', ({ u, corpo }) => {
   if (corpo.senha_atual !== u.senha) falha(422, 'SENHA_ATUAL_INCORRETA', 'A senha atual está incorreta.');
   if (!corpo.nova_senha || corpo.nova_senha.length < 8) validacao('body.nova_senha', 'mínimo de 8 caracteres');
   u.senha = corpo.nova_senha;
-  return null;
+  revogarTokens(u);
+  return emitirSessao(u); // 200 com token novo (contrato 1.2)
 });
 
 // Salas
@@ -335,9 +354,14 @@ rota('POST', '/salas', ({ u, corpo }) => {
   db.salas.push(s);
   return [201, salaDetalhe(s)];
 });
+// §1.6: PUT é substituição; `ativo` é obrigatório em salas e horários.
+const exigirAtivo = (corpo) => {
+  if (typeof corpo?.ativo !== 'boolean') validacao('body.ativo', 'obrigatório');
+};
 rota('PUT', '/salas/{id}', ({ u, p, corpo }) => {
   exigirAdmin(u);
   const s = acharSala(p.id, u);
+  exigirAtivo(corpo);
   Object.assign(s, dadosSala(corpo, s.id), { atualizado_em: agoraIso() });
   return salaDetalhe(s);
 });
@@ -517,13 +541,17 @@ rota('PUT', '/professores/{id}', ({ u, p, corpo }) => {
   const alvo = acharProfessor(p.id);
   if (alvo.id === u.id && (corpo.ativo === false || corpo.papel !== 'admin'))
     falha(422, 'OPERACAO_EM_SI_MESMO', 'Você não pode desativar a própria conta nem remover seu papel de admin.');
+  const derruba = corpo.papel !== alvo.papel || (alvo.ativo && corpo.ativo === false);
   Object.assign(alvo, { nome: exigirNome(corpo), email: textoOuNulo(corpo.email), papel: corpo.papel, ativo: corpo.ativo });
+  if (derruba) revogarTokens(alvo);
   return usuarioJson(alvo);
 });
 rota('PUT', '/professores/{id}/senha', ({ u, p, corpo }) => {
   exigirAdmin(u);
   if (!corpo.nova_senha || corpo.nova_senha.length < 8) validacao('body.nova_senha', 'mínimo de 8 caracteres');
-  acharProfessor(p.id).senha = corpo.nova_senha;
+  const alvo = acharProfessor(p.id);
+  alvo.senha = corpo.nova_senha;
+  revogarTokens(alvo); // inclusive a sessão do próprio admin, se alvo for ele
   return null;
 });
 rota('DELETE', '/professores/{id}', ({ u, p }) => {
@@ -577,6 +605,7 @@ rota('POST', '/horarios', ({ u, corpo }) => {
 rota('PUT', '/horarios/{id}', ({ u, p, corpo }) => {
   exigirAdmin(u);
   const h = db.horarios.find((x) => x.id === Number(p.id)) || naoEncontrado();
+  exigirAtivo(corpo);
   return Object.assign(h, dadosHorario(corpo, h.id));
 });
 rota('DELETE', '/horarios/{id}', ({ u, p }) => {
@@ -712,7 +741,7 @@ rota('GET', '/reservas', ({ u, q }) => {
   } else {
     de = q.get('de');
     ate = q.get('ate');
-    if (!ate || ate < de || (deIso(ate) - deIso(de)) / 86400000 > 62)
+    if (!ate || ate < de || Math.round((deIso(ate) - deIso(de)) / 86400000) + 1 > 62)
       falha(422, 'INTERVALO_INVALIDO', 'Intervalo inválido (até 62 dias).');
   }
   const salas = q.getAll('sala_id').map(Number);
@@ -771,8 +800,8 @@ rota('POST', '/reservas/{id}/cancelar', ({ u, p, corpo }) => {
 // ---------- transporte ----------
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchMock(url, init = {}) {
-  await esperar(120 + Math.random() * 180);
+export async function fetchMock(url, init = {}) {
+  if (comAtraso) await esperar(120 + Math.random() * 180);
   const endereco = new URL(url);
   const base = new URL(API_URL);
   const caminho = endereco.pathname.slice(base.pathname.replace(/\/$/, '').length) || '/';

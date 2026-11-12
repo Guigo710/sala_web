@@ -1,6 +1,6 @@
 # 42: Imagem do frontend roda o dev server do Vite
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Pixel
 Origem: Sentinela
 Severidade: média
@@ -20,6 +20,8 @@ arquivos (`server.fs.deny` bypass). Na escola ele fica acessível a qualquer má
 - O E2E (`npx playwright test`) e o CI (`ci.yml`, job `e2e`) já rodam contra o build de produção (`vite preview`).
 
 ## Critérios de aceite
-- [ ] `docker compose up --build` serve o build (sem `/src/main.jsx` acessível: `curl :5173/src/main.jsx` ≠ código-fonte).
-- [ ] Rotas da SPA (`/agenda`, `/admin/ambientes`) abrem direto pela URL.
-- [ ] `npx playwright test` passa contra o Compose.
+- [x] `docker compose up --build` serve o build (sem `/src/main.jsx` acessível: `curl :5173/src/main.jsx` ≠ código-fonte).
+- [x] Rotas da SPA (`/agenda`, `/admin/ambientes`) abrem direto pela URL.
+- [x] `npx playwright test` passa contra o Compose.
+
+**Pixel (2026-11-12):** `frontend/Dockerfile` multi-stage (`node:22-alpine` → `npm ci && npm run build` com `VITE_API_URL` e `VITE_UPLOAD_MAX_MB` como `ARG`; `nginx:1.28-alpine` serve `dist/`). `frontend/nginx.conf`: fallback de SPA para `index.html`, arquivo com extensão inexistente → 404 (`/src/main.jsx` dá 404), cache longo só em `/assets/`, `nosniff`/`X-Frame-Options`/`Referrer-Policy`, só IPv4. Compose (só o serviço `frontend`): build args, porta `5173:80`, sem `environment`. Dev server do Vite agora escuta só em `localhost`. Validado: imagem construída (no sandbox o `npm ci` dentro do build precisou de rede do host + CA do proxy, só no ambiente de validação), `curl` de `/agenda`, `/admin/ambientes`, `/ambientes/3` → 200 com `index.html`; `/src/main.jsx` → 404; bundle sem o mock; `npx playwright test` 5/5 contra o Compose (backend da imagem anterior ao ticket 41). ADR-0001 ainda descreve o frontend do Compose em modo dev: Atlas atualizar.

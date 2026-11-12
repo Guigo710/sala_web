@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { definirToken, definirTransporte, obterToken, requisitar } from '../api/cliente';
 import Login from '../pages/Login';
 import { LocalAtual } from '../testes/render';
@@ -34,7 +34,7 @@ function Painel() {
 
 function app(rota) {
   return render(
-    <MemoryRouter initialEntries={[rota]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter initialEntries={[rota]}>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />

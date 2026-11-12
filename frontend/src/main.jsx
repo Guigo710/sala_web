@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router';
 import App from './App';
 import { AuthProvider } from './auth/AuthContext';
 import AvisosProvider from './components/AvisosProvider';
@@ -16,7 +16,7 @@ async function iniciar() {
 
   createRoot(document.getElementById('root')).render(
     <StrictMode>
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <BrowserRouter>
         <AuthProvider>
           <AvisosProvider>
             <App />

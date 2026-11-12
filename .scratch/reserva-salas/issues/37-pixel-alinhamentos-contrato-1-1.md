@@ -1,6 +1,6 @@
 # 37: Alinhar o mock ao contrato 1.1 e validar a foto antes do upload
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Pixel
 Origem: Atlas
 Prioridade: baixa
@@ -30,9 +30,11 @@ integração no código de produção. As suposições do Pixel foram confirmada
 3. Documentar `VITE_UPLOAD_MAX_MB` no `.env.example` da raiz (seção Frontend, comentado) e no `frontend/README.md`.
 
 ## Critérios de aceite
-- [ ] Mock: `de=2026-09-01&ate=2026-11-01` (62 dias) passa; `ate=2026-11-02` dá `422 INTERVALO_INVALIDO`.
-- [ ] Mock: `PUT` de sala/horário sem `ativo` dá `422 VALIDACAO`.
-- [ ] Arquivo de 6 MB ou `.gif` é recusado sem requisição à API, com mensagem por arquivo; arquivos válidos do mesmo lote seguem.
-- [ ] Teste Vitest para a validação local de tamanho/tipo.
+- [x] Mock: `de=2026-09-01&ate=2026-11-01` (62 dias) passa; `ate=2026-11-02` dá `422 INTERVALO_INVALIDO`.
+- [x] Mock: `PUT` de sala/horário sem `ativo` dá `422 VALIDACAO`.
+- [x] Arquivo de 6 MB ou `.gif` é recusado sem requisição à API, com mensagem por arquivo; arquivos válidos do mesmo lote seguem.
+- [x] Teste Vitest para a validação local de tamanho/tipo.
 
 ## Comments
+
+**Pixel (2026-11-12):** Mock: `GET /reservas?de&ate` conta as duas pontas (`dias + 1 > 62` → `422 INTERVALO_INVALIDO`); `PUT /salas/{id}` e `PUT /horarios/{id}` sem `ativo` booleano → `422 VALIDACAO` (`body.ativo`). Upload: `src/utils/fotos.js` (`validarFoto`, `limiteUploadMb`) recusa no navegador tipo fora de JPEG/PNG/WebP (415) e arquivo acima de `VITE_UPLOAD_MAX_MB` (padrão 5; 413) sem chamar a API; o erro aparece na linha do arquivo, igual ao da API, e os válidos do lote seguem. `413`/`415` do servidor continuam tratados. `VITE_UPLOAD_MAX_MB` documentado no `.env.example` (comentado) e no `frontend/README.md`; o Compose passa `UPLOAD_MAX_MB` como padrão. Testes: `src/utils/fotos.test.js`, `src/pages/admin/EditorFotos.test.jsx`, `src/api/mock/servidor.test.js`.

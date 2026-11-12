@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import {
   atualizarProfessor,
   criarProfessor,
@@ -146,7 +147,9 @@ function FormProfessor({ professor, aoSalvar, aoCancelar, ehVoceMesmo }) {
   );
 }
 
-function FormSenha({ professor, aoSalvar, aoCancelar }) {
+const AVISO_PROPRIA_SENHA = 'Sua sessão será encerrada e você precisará entrar de novo com a nova senha.';
+
+function FormSenha({ professor, aoSalvar, aoCancelar, ehVoceMesmo }) {
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -172,6 +175,11 @@ function FormSenha({ professor, aoSalvar, aoCancelar }) {
         <p>
           Nova senha para <strong>{professor.nome}</strong> (RM {professor.rm}).
         </p>
+        {ehVoceMesmo && (
+          <Alerta tipo="aviso">
+            {AVISO_PROPRIA_SENHA} Para manter a sessão, use <Link to="/minha-conta">Trocar minha senha</Link>.
+          </Alerta>
+        )}
         <ErroApiAlerta erro={erro} />
         <div className="campo">
           <label htmlFor="nova-senha-prof">Nova senha</label>
@@ -198,7 +206,7 @@ function FormSenha({ professor, aoSalvar, aoCancelar }) {
           Cancelar
         </button>
         <button type="submit" className="botao" disabled={salvando || !senha || curta}>
-          {salvando ? 'Salvando…' : 'Redefinir senha'}
+          {salvando ? 'Salvando…' : ehVoceMesmo ? 'Redefinir e sair' : 'Redefinir senha'}
         </button>
       </footer>
     </form>
@@ -206,7 +214,7 @@ function FormSenha({ professor, aoSalvar, aoCancelar }) {
 }
 
 export default function AdminProfessores() {
-  const { usuario } = useAuth();
+  const { usuario, encerrarSessao } = useAuth();
   const { avisar } = useAvisos();
   const [confirmar, dialogo] = useConfirmar();
   const [busca, setBusca] = useState('');
@@ -237,6 +245,24 @@ export default function AdminProfessores() {
     } catch (err) {
       setErroAcao(err);
     }
+  };
+
+  // Redefinir a própria senha por aqui derruba a sessão do admin (§4.7, ADR-0008): confirma antes.
+  const abrirRedefinicao = async (p) => {
+    if (p.id === usuario.id) {
+      const ok = await confirmar({
+        titulo: 'Redefinir a sua própria senha',
+        mensagem: (
+          <p>
+            {AVISO_PROPRIA_SENHA} Para trocar a senha mantendo a sessão, use{' '}
+            <Link to="/minha-conta">Trocar minha senha</Link> em Minha conta.
+          </p>
+        ),
+        textoConfirmar: 'Continuar mesmo assim',
+      });
+      if (!ok) return;
+    }
+    setSenhaDe(p);
   };
 
   const remover = async (p) => {
@@ -346,7 +372,7 @@ export default function AdminProfessores() {
                           <button type="button" className="botao botao-secundario botao-pequeno" onClick={() => setEditando({ professor: p })}>
                             Editar
                           </button>
-                          <button type="button" className="botao botao-secundario botao-pequeno" onClick={() => setSenhaDe(p)}>
+                          <button type="button" className="botao botao-secundario botao-pequeno" onClick={() => abrirRedefinicao(p)}>
                             Redefinir senha
                           </button>
                           {!voce && (
@@ -392,10 +418,15 @@ export default function AdminProfessores() {
         {senhaDe && (
           <FormSenha
             professor={senhaDe}
+            ehVoceMesmo={senhaDe.id === usuario.id}
             aoCancelar={() => setSenhaDe(null)}
             aoSalvar={() => {
-              avisar(`Senha de ${senhaDe.nome} redefinida.`);
               setSenhaDe(null);
+              if (senhaDe.id === usuario.id) {
+                encerrarSessao('Senha redefinida. Entre novamente.');
+                return;
+              }
+              avisar(`Senha de ${senhaDe.nome} redefinida.`);
             }}
           />
         )}

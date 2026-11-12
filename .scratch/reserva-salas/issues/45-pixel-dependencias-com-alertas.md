@@ -1,6 +1,6 @@
 # 45: Dependências do frontend com alertas de segurança (npm audit)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Pixel
 Origem: Sentinela
 Severidade: baixa
@@ -19,5 +19,7 @@ Referências: ticket 25; `frontend/package.json`
 - Manter `npm audit --omit=dev` limpo; registrar exceções no README se alguma ficar.
 
 ## Critérios de aceite
-- [ ] `npm audit --omit=dev` sem alertas.
-- [ ] `npm run lint`, `npm test`, `npm run build` e `npx playwright test` verdes depois da atualização.
+- [x] `npm audit --omit=dev` sem alertas.
+- [x] `npm run lint`, `npm test`, `npm run build` e `npx playwright test` verdes depois da atualização.
+
+**Pixel (2026-11-12):** `react-router-dom` 6.30 → `react-router` 7.18.5 (pacote único do v7, imports trocados; flags `future` removidas, já eram o padrão no v7). `vitest` 3.2 → 5.1.0 (traz `@vitest/mocker` 5 e sai o `tinypool`). `npm audit`: antes 5 alertas (3 moderadas, 2 críticas; `--omit=dev`: 2 moderadas); depois 0 e 0. `lint`, `test` (55), `build` e `npx playwright test` (5/5, contra o Compose) verdes. Sem exceções a registrar.

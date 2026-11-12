@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router';
 import { listarMinhasReservas } from '../api/reservas';
 import { useCarregar } from '../hooks/useCarregar';
 import Carregando from '../components/Carregando';

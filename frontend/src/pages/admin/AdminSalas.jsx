@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { atualizarSala, excluirSala, listarSalas, obterSala } from '../../api/salas';
 import { useCarregar } from '../../hooks/useCarregar';
 import { useAvisos } from '../../components/avisos';

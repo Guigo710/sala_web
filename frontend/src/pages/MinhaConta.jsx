@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { trocarSenha } from '../api/auth';
 import { useAuth } from '../auth/contexto';
 import Alerta from '../components/Alerta';
 import ErroApiAlerta from '../components/ErroApiAlerta';
 
 export default function MinhaConta() {
-  const { usuario } = useAuth();
+  const { usuario, trocarSenha } = useAuth();
   const [senhaAtual, setSenhaAtual] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
@@ -63,7 +62,7 @@ export default function MinhaConta() {
 
       <h2>Trocar senha</h2>
       <form className="formulario cartao" onSubmit={aoEnviar}>
-        {sucesso && <Alerta tipo="sucesso">Senha alterada com sucesso.</Alerta>}
+        {sucesso && <Alerta tipo="sucesso">Senha alterada com sucesso. As outras sessões foram encerradas.</Alerta>}
         <ErroApiAlerta erro={erro} />
         <div className="campo">
           <label htmlFor="senha-atual">Senha atual</label>

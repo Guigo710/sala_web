@@ -1,6 +1,6 @@
 # 46: Usar o token novo devolvido pela troca de senha (contrato 1.2)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Pixel
 Origem: Atlas
 Prioridade: alta (muda junto com o ticket 41: sem isto, quem troca a senha é deslogado na próxima requisição)
@@ -27,7 +27,9 @@ Referências: ADR-0008; `docs/api-contrato.md` §4.2, §4.7 e §7 (1.2); ticket 
    como no backend).
 
 ## Critérios de aceite
-- [ ] Trocar a própria senha mantém o usuário logado; o `localStorage` guarda o token novo; a navegação seguinte não dá 401.
-- [ ] Com o mock: depois da troca, o token antigo recebe `401`.
-- [ ] Admin redefinindo a própria senha pela tela de cadastros é avisado e acaba na tela de login com a mensagem.
-- [ ] Vitest: troca de senha grava o token novo; redefinição da própria senha pelo admin limpa a sessão.
+- [x] Trocar a própria senha mantém o usuário logado; o `localStorage` guarda o token novo; a navegação seguinte não dá 401.
+- [x] Com o mock: depois da troca, o token antigo recebe `401`.
+- [x] Admin redefinindo a própria senha pela tela de cadastros é avisado e acaba na tela de login com a mensagem.
+- [x] Vitest: troca de senha grava o token novo; redefinição da própria senha pelo admin limpa a sessão.
+
+**Pixel (2026-11-12):** `api/auth.js`: `trocarSenha` devolve o corpo (200 do contrato 1.2). `AuthContext`: `iniciarSessao` comum a `entrar` e ao novo `trocarSenha` (grava `localStorage`, `definirToken`, `usuario`); novo `encerrarSessao(mensagem)` limpa a sessão e vai para `/login` com aviso. `MinhaConta` usa `trocarSenha` do contexto ("As outras sessões foram encerradas."). `AdminProfessores`: redefinir a própria senha pede confirmação (com link para "Trocar minha senha"), o formulário avisa e o botão vira "Redefinir e sair"; após o `204`, `encerrarSessao('Senha redefinida. Entre novamente.')`. Mock: token `mock.<id>.<versão>`, versão por conta incrementada na troca/redefinição de senha, mudança de papel e desativação; `PUT /auth/me/senha` → 200 com token novo. Testes: `src/auth/trocaDeSenha.test.jsx` (fluxo real com o mock como transporte) e `src/api/mock/servidor.test.js`. Não testado contra o backend do ticket 41 (feito em paralelo).

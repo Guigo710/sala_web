@@ -1,6 +1,6 @@
 /* Renderização com os provedores do app (rotas, sessão e avisos) para testes de componentes. */
 import { render } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { AuthContext } from '../auth/contexto';
 import AvisosProvider from '../components/AvisosProvider';
 
@@ -16,6 +16,8 @@ export function authFalso(usuario = PROFESSOR, extra = {}) {
     sair: vi.fn(),
     saiu: false,
     mensagemSessao: '',
+    trocarSenha: vi.fn(),
+    encerrarSessao: vi.fn(),
     ...extra,
   };
 }
@@ -28,7 +30,7 @@ export function LocalAtual() {
 
 export function renderizar(ui, { usuario = PROFESSOR, auth, rota = '/', caminho = '*' } = {}) {
   return render(
-    <MemoryRouter initialEntries={[rota]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter initialEntries={[rota]}>
       <AuthContext.Provider value={auth || authFalso(usuario)}>
         <AvisosProvider>
           <Routes>

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { formatarDataHora, formatarDataLonga } from '../utils/datas';
 import { plural } from '../utils/formatacao';
 import Modal from './Modal';
