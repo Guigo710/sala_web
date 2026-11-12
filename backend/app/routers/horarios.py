@@ -9,7 +9,7 @@ from app.core.erros import ErroApi, nao_encontrado
 from app.core.seguranca import Admin, Db, UsuarioOpcional
 from app.models import HorarioAula, Reserva
 from app.schemas.comum import HorarioAula as HorarioSaida
-from app.schemas.horarios import HorarioEntrada
+from app.schemas.horarios import HorarioAtualizar, HorarioEntrada
 from app.services.aulas import ordem_turno_sql
 
 router = APIRouter(prefix="/horarios", tags=["horários"])
@@ -94,7 +94,7 @@ def criar(entrada: HorarioEntrada, db: Db, _: Admin) -> HorarioAula:
 
 
 @router.put("/{horario_id}", response_model=HorarioSaida)
-def atualizar(horario_id: int, entrada: HorarioEntrada, db: Db, _: Admin) -> HorarioAula:
+def atualizar(horario_id: int, entrada: HorarioAtualizar, db: Db, _: Admin) -> HorarioAula:
     h = _obter(db, horario_id)
     _checar(db, entrada, ignorar_id=h.id)
     for campo, valor in entrada.model_dump().items():

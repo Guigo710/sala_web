@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Valores de exemplo do `.env.example`: públicos, nunca podem valer em execução (ticket 25/36).
 JWT_SECRET_EXEMPLO = "troque-por-um-segredo-longo-e-aleatorio"
 ADMIN_SENHA_EXEMPLO = "troque-esta-senha-admin"
+DB_SENHA_EXEMPLO = "troque-esta-senha"
 
 # Procura `.env` na pasta atual e na raiz do repositório (ao rodar de dentro de backend/).
 _ARQUIVOS_ENV = (".env", "../.env")
@@ -44,6 +45,17 @@ class Config(ConfigBanco):
                 "python -c \"import secrets; print(secrets.token_urlsafe(48))\" e coloque no .env."
             )
         return valor
+
+    @property
+    def banco_com_senha_de_exemplo(self) -> bool:
+        """DATABASE_URL ainda com a senha do .env.example (ticket 43). Só gera aviso: recusar subir
+        impediria quem já tem o volume pgdata criado com essa senha de abrir o sistema."""
+        from sqlalchemy.engine import make_url
+
+        try:
+            return make_url(self.DATABASE_URL).password == DB_SENHA_EXEMPLO
+        except Exception:  # noqa: BLE001
+            return False
 
     @property
     def cors_origens(self) -> list[str]:

@@ -17,7 +17,7 @@ from tests.conftest import token_de
 # (método, rota, corpo). Ids 1 existem no seed (sala 1, equipamento 1, software 1, horário 1, semestre 1).
 ROTAS_ADMIN = [
     ("POST", "/salas", {"nome": "Nova", "tipo": "sala", "capacidade": 10}),
-    ("PUT", "/salas/1", {"nome": "Sala 01", "tipo": "sala", "capacidade": 41}),
+    ("PUT", "/salas/1", {"nome": "Sala 01", "tipo": "sala", "capacidade": 41, "ativo": True}),  # ativo obrigatório no PUT (§1.6)
     ("DELETE", "/salas/1", None),
     ("PUT", "/salas/1/equipamentos", [{"equipamento_id": 1, "quantidade": 2}]),
     ("PUT", "/salas/1/softwares", {"software_ids": [1]}),
@@ -107,7 +107,7 @@ def test_login_sucesso_formato(client):
     assert corpo["token_type"] == "bearer" and corpo["expira_em"]
     assert set(corpo["usuario"]) == {"id", "rm", "nome", "email", "papel", "ativo", "criado_em"}
     claims = jwt.decode(corpo["access_token"], options={"verify_signature": False})
-    assert set(claims) == {"sub", "papel", "iat", "exp"}
+    assert set(claims) == {"sub", "papel", "ver", "iat", "exp"}  # `ver`: ADR-0008
     assert claims["exp"] - claims["iat"] == obter_config().JWT_EXPIRA_MINUTOS * 60
     assert jwt.get_unverified_header(corpo["access_token"])["alg"] == "HS256"
 
@@ -144,13 +144,23 @@ def test_conta_inativa_nao_loga_e_token_antigo_para_de_valer(client, admin, novo
     assert r.json() == {"detail": "RM ou senha inválidos.", "codigo": "CREDENCIAIS_INVALIDAS"}
 
 
-def test_papel_vem_do_banco_nao_do_token(client, admin, novo_professor):
+def test_papel_vem_do_banco_nao_do_token(client, db, admin, novo_professor):
+    """O papel vale do banco, não da claim `papel` do token (ADR-0004).
+
+    Pela API, mudar o papel também revoga os tokens da conta (ADR-0008, coberto em test_revogacao_tokens);
+    por isso o papel é trocado direto no banco, sem mexer em `token_versao`, para isolar a regra.
+    """
     headers, prof = novo_professor("promo01")
     assert client.get("/professores", headers=headers).status_code == 403
-    client.put(f"/professores/{prof['id']}", headers=admin, json={"nome": prof["nome"], "email": None, "papel": "admin", "ativo": True})
-    assert client.get("/professores", headers=headers).status_code == 200  # mesmo token, agora admin
-    client.put(f"/professores/{prof['id']}", headers=admin, json={"nome": prof["nome"], "email": None, "papel": "professor", "ativo": True})
+    db.execute(text("UPDATE professores SET papel = 'admin' WHERE id = :id"), {"id": prof["id"]})
+    db.commit()
+    assert client.get("/professores", headers=headers).status_code == 200  # mesmo token (claim professor), agora admin
+    db.execute(text("UPDATE professores SET papel = 'professor' WHERE id = :id"), {"id": prof["id"]})
+    db.commit()
     assert client.get("/professores", headers=headers).status_code == 403
+    # e pela API a mudança de papel derruba o token antigo
+    client.put(f"/professores/{prof['id']}", headers=admin, json={"nome": prof["nome"], "email": None, "papel": "admin", "ativo": True})
+    assert client.get("/professores", headers=headers).status_code == 401
 
 
 def _forjar(payload, segredo=None, alg="HS256"):
@@ -184,15 +194,31 @@ def test_token_adulterado(client):
     assert client.get("/auth/me", headers={"Authorization": f"Basic {token}"}).status_code == 401
 
 
-def test_rate_limit_de_login(client):
+def test_rate_limit_de_login(client, novo_professor):
+    """ADR-0007: 5 falhas do par (IP, RM) bloqueiam o par; 20 do IP bloqueiam o IP; sucesso zera só o par."""
+    novo_professor("vizinho1", senha="senhaViz1")
     for _ in range(4):
         assert client.post("/auth/login", json={"rm": "admin", "senha": "errada"}).status_code == 401
-    # sucesso zera o contador
+    # sucesso zera o contador do par
+    assert client.post("/auth/login", json={"rm": "admin", "senha": "senhaAdmin123"}).status_code == 200
+    for _ in range(4):
+        assert client.post("/auth/login", json={"rm": "admin", "senha": "errada"}).status_code == 401
     assert client.post("/auth/login", json={"rm": "admin", "senha": "senhaAdmin123"}).status_code == 200
     for _ in range(5):
-        assert client.post("/auth/login", json={"rm": "x", "senha": "errada"}).status_code == 401
+        assert client.post("/auth/login", json={"rm": "admin", "senha": "errada"}).status_code == 401
+    # par bloqueado: 429 mesmo com a senha certa
     r = client.post("/auth/login", json={"rm": "admin", "senha": "senhaAdmin123"})
     assert (r.status_code, r.json()["codigo"]) == (429, "MUITAS_TENTATIVAS")
+    # outro RM no mesmo IP continua entrando (antes, o IP inteiro ficava bloqueado)
+    assert client.post("/auth/login", json={"rm": "vizinho1", "senha": "senhaViz1"}).status_code == 200
+    # teto por IP: 20 falhas no total (5 acima + 15 de RMs variados) bloqueiam qualquer RM neste IP
+    for i in range(15):
+        assert client.post("/auth/login", json={"rm": f"x{i % 3}", "senha": "errada"}).status_code == 401
+    r = client.post("/auth/login", json={"rm": "vizinho1", "senha": "senhaViz1"})
+    assert (r.status_code, r.json()["codigo"]) == (429, "MUITAS_TENTATIVAS")
+    # o bloqueio é do IP: outro IP entra normalmente
+    with TestClient(app, client=("10.9.8.7", 40000)) as outro_ip:
+        assert outro_ip.post("/auth/login", json={"rm": "admin", "senha": "senhaAdmin123"}).status_code == 200
 
 
 def test_troca_de_senha(client, novo_professor):
@@ -201,7 +227,8 @@ def test_troca_de_senha(client, novo_professor):
     assert (r.status_code, r.json()["codigo"]) == (422, "SENHA_ATUAL_INCORRETA")
     r = client.put("/auth/me/senha", headers=headers, json={"senha_atual": "senhaVelha1", "nova_senha": "curta"})
     assert (r.status_code, r.json()["codigo"]) == (422, "VALIDACAO")
-    assert client.put("/auth/me/senha", headers=headers, json={"senha_atual": "senhaVelha1", "nova_senha": "senhaNova12"}).status_code == 204
+    r = client.put("/auth/me/senha", headers=headers, json={"senha_atual": "senhaVelha1", "nova_senha": "senhaNova12"})
+    assert r.status_code == 200 and r.json()["access_token"]  # contrato 1.2: token novo (ADR-0008)
     assert client.post("/auth/login", json={"rm": "troca01", "senha": "senhaVelha1"}).status_code == 401
     token_de(client, "troca01", "senhaNova12")
 

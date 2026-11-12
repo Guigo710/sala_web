@@ -9,6 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Só as dependências de produção, com versões exatas (ticket 36); pytest/httpx ficam no requirements-dev.txt.
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 

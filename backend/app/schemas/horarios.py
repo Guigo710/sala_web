@@ -27,3 +27,9 @@ class HorarioEntrada(BaseModel):
     @classmethod
     def _dias_unicos(cls, v: list[int]) -> list[int]:
         return sorted(set(v))
+
+
+class HorarioAtualizar(HorarioEntrada):
+    """`PUT /horarios/{id}`: mesmos campos e validações, mas `ativo` obrigatório (contrato §1.6)."""
+
+    ativo: bool

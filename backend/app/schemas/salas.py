@@ -22,6 +22,12 @@ class SalaEntrada(BaseModel):
     ativo: bool = True
 
 
+class SalaAtualizar(SalaEntrada):
+    """`PUT /salas/{id}`: mesmos campos, mas `ativo` obrigatório (contrato §1.6)."""
+
+    ativo: bool
+
+
 class SalaEquipamento(BaseModel):
     equipamento_id: int
     nome: str

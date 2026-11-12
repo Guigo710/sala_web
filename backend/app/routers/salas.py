@@ -95,7 +95,7 @@ def criar(entrada: ss.SalaEntrada, db: Db, _: Admin) -> ss.SalaDetalhe:
 
 
 @router.put("/{sala_id}", response_model=ss.SalaDetalhe)
-def atualizar(sala_id: int, entrada: ss.SalaEntrada, db: Db, admin: Admin) -> ss.SalaDetalhe:
+def atualizar(sala_id: int, entrada: ss.SalaAtualizar, db: Db, admin: Admin) -> ss.SalaDetalhe:
     sala = servico.obter_sala(db, sala_id, admin)
     _checar_nome(db, entrada.nome, ignorar_id=sala.id)
     for campo, valor in entrada.model_dump().items():

@@ -1,11 +1,13 @@
-"""Seed idempotente: `python -m app.seed` (roda a cada start do container).
+"""Seed: `python -m app.seed` (roda a cada start do container). Política do ADR-0006.
 
-Política (para não desfazer edições do admin a cada reinício):
 - Admin inicial: criado a partir de ADMIN_RM/ADMIN_SENHA/ADMIN_NOME se esse RM ainda não existir.
-- Equipamentos, softwares, ambientes e grade: inseridos por chave natural **somente se a tabela
-  estiver vazia** (primeira execução). Depois disso tudo é do admin; renomear ou excluir não é desfeito.
-- Semestres do ano corrente e do seguinte: inseridos por nome, se não existirem e não se sobrepuserem
-  a nenhum semestre já cadastrado.
+  Uma conta existente nunca é alterada. Se o admin com ADMIN_RM for excluído, o próximo start o recria
+  (recuperação de acesso; para impedir, retire ADMIN_RM/ADMIN_SENHA do .env).
+- Equipamentos, softwares, ambientes (com associações), grade de aulas e semestres: cada tabela recebe
+  os dados de partida **somente se estiver vazia**. Semestres de partida: os dois do ano corrente e os
+  dois do seguinte; daí em diante o admin cadastra os novos.
+- O seed nunca atualiza nem apaga linhas. Consequência: se o admin esvaziar uma tabela inteira, o próximo
+  start recoloca os dados de partida daquela tabela.
 Todos os nomes são genéricos e editáveis pelo painel admin.
 """
 
@@ -150,17 +152,12 @@ def semestres_padrao(ano: int) -> list[tuple[str, date, date]]:
 
 
 def seed_semestres(db: Session) -> None:
+    """Semestres de partida (ano corrente e seguinte) só com a tabela vazia (ADR-0006)."""
+    if not _tabela_vazia(db, Semestre):
+        return
     ano = hoje().year
     for nome, inicio, fim in semestres_padrao(ano) + semestres_padrao(ano + 1):
-        if db.scalar(select(Semestre.id).where(Semestre.nome == nome)) is not None:
-            continue
-        sobreposto = db.scalar(
-            select(Semestre.id).where(Semestre.data_inicio <= fim, Semestre.data_fim >= inicio)
-        )
-        if sobreposto is not None:
-            continue
         db.add(Semestre(nome=nome, data_inicio=inicio, data_fim=fim))
-        db.flush()
         log.info("Semestre %s criado (%s a %s).", nome, inicio, fim)
 
 

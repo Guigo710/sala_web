@@ -23,7 +23,8 @@ def test_login_admin_e_me(client, admin):
     assert "senha_hash" not in r.json()
 
 
-def test_credenciais_invalidas_e_rate_limit(client):
+def test_credenciais_invalidas_e_rate_limit(client, professor):
+    # ADR-0007: 5 falhas do par (IP, RM) bloqueiam esse par, mesmo com a senha certa depois
     for _ in range(5):
         r = client.post("/auth/login", json={"rm": "admin", "senha": "errada"})
         assert r.status_code == 401
@@ -31,6 +32,8 @@ def test_credenciais_invalidas_e_rate_limit(client):
     r = client.post("/auth/login", json={"rm": "admin", "senha": "senhaAdmin123"})
     assert r.status_code == 429
     assert r.json()["codigo"] == "MUITAS_TENTATIVAS"
+    # outro RM no mesmo IP não é afetado
+    assert client.post("/auth/login", json={"rm": "prof01", "senha": "senhaProf1"}).status_code == 200
 
 
 def test_envelope_de_validacao(client, admin):

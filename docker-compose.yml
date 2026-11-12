@@ -11,8 +11,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
       POSTGRES_DB: ${POSTGRES_DB:-sala_web}
       TZ: ${TZ:-America/Sao_Paulo}
+    # Só no loopback da máquina (ticket 43): serve para rodar o backend fora do Docker na mesma máquina,
+    # mas não fica acessível pela rede. O backend do Compose usa a rede interna (host "db").
     ports:
-      - "${DB_PORTA_HOST:-5432}:5432"
+      - "127.0.0.1:${DB_PORTA_HOST:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -38,15 +40,18 @@ services:
       - uploads:/app/uploads
 
   frontend:
+    # Build de produção servido pelo nginx (ticket 42). VITE_* valem no build: mudou o .env,
+    # rode "docker compose up --build". O dev server do Vite fica para o desenvolvimento local.
     build:
       context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_UPLOAD_MAX_MB: ${VITE_UPLOAD_MAX_MB:-${UPLOAD_MAX_MB:-5}}
     restart: unless-stopped
     depends_on:
       - backend
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     ports:
-      - "5173:5173"
+      - "5173:80"
 
 volumes:
   pgdata:

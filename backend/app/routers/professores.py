@@ -83,6 +83,9 @@ def atualizar(professor_id: int, entrada: ProfessorAtualizar, db: Db, admin: Adm
     p = _obter(db, professor_id)
     if p.id == admin.id and (not entrada.ativo or entrada.papel != "admin"):
         raise _em_si_mesmo("Você não pode desativar a própria conta nem remover o próprio papel de admin.")
+    # ADR-0008: mudar o papel ou desativar derruba as sessões da conta; reativar não revive tokens antigos.
+    if entrada.papel != p.papel or (p.ativo and not entrada.ativo):
+        p.revogar_sessoes()
     p.nome, p.email, p.papel, p.ativo = entrada.nome, entrada.email, entrada.papel, entrada.ativo
     db.commit()
     db.refresh(p)
@@ -93,6 +96,7 @@ def atualizar(professor_id: int, entrada: ProfessorAtualizar, db: Db, admin: Adm
 def redefinir_senha(professor_id: int, entrada: RedefinirSenhaEntrada, db: Db, _: Admin) -> None:
     p = _obter(db, professor_id)
     p.senha_hash = hash_senha(entrada.nova_senha)
+    p.revogar_sessoes()
     db.commit()
 
 

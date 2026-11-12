@@ -2,6 +2,7 @@
 
 import threading
 import time as _time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Annotated
 
@@ -57,18 +58,23 @@ def criar_token(professor: Professor) -> tuple[str, datetime]:
     payload = {
         "sub": str(professor.id),
         "papel": professor.papel,
+        "ver": professor.token_versao,
         "iat": int(emitido.timestamp()),
         "exp": int(expira.timestamp()),
     }
     return jwt.encode(payload, config.JWT_SECRET, algorithm=ALGORITMO), expira
 
 
-def _id_do_token(token: str) -> int | None:
+def _claims_do_token(token: str) -> tuple[int, int] | None:
+    """(id do professor, versão do token) de um JWT válido; `None` se inválido/expirado/sem `ver`."""
     try:
         payload = jwt.decode(
-            token, obter_config().JWT_SECRET, algorithms=[ALGORITMO], options={"require": ["sub", "exp"]}
+            token, obter_config().JWT_SECRET, algorithms=[ALGORITMO], options={"require": ["sub", "exp", "ver"]}
         )
-        return int(payload["sub"])
+        versao = payload["ver"]
+        if not isinstance(versao, int) or isinstance(versao, bool):
+            return None
+        return int(payload["sub"]), versao
     except (jwt.PyJWTError, ValueError, TypeError):
         return None
 
@@ -78,14 +84,18 @@ def usuario_opcional(
     credenciais: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Professor | None:
-    """Rotas públicas: token válido de conta ativa → professor; qualquer outra coisa → visitante."""
+    """Rotas públicas: token válido de conta ativa → professor; qualquer outra coisa → visitante.
+
+    Token revogado (`ver` diferente de `token_versao`, ADR-0008) é tratado como inválido.
+    """
     if credenciais is None or credenciais.scheme.lower() != "bearer":
         return None
-    professor_id = _id_do_token(credenciais.credentials)
-    if professor_id is None:
+    claims = _claims_do_token(credenciais.credentials)
+    if claims is None:
         return None
+    professor_id, versao = claims
     professor = db.get(Professor, professor_id)
-    if professor is None or not professor.ativo:
+    if professor is None or not professor.ativo or professor.token_versao != versao:
         return None
     return professor
 
@@ -108,46 +118,110 @@ Admin = Annotated[Professor, Depends(exigir_admin)]
 Db = Annotated[Session, Depends(get_db)]
 
 
-# ---------------------------------------------------------------- rate limit de login
-class LimiteLogin:
-    """5 falhas do mesmo IP em 5 min bloqueiam o IP por 5 min (em memória, por processo)."""
+# ---------------------------------------------------------------- rate limit de login (ADR-0007)
+MAX_FALHAS_PAR = 5  # falhas do mesmo par (IP, RM) que bloqueiam o par
+MAX_FALHAS_IP = 20  # falhas do mesmo IP, de qualquer RM, que bloqueiam o IP
+JANELA_S = 300  # janela de contagem
+BLOQUEIO_S = 300  # duração do bloqueio
 
-    def __init__(self, max_falhas: int = 5, janela_s: int = 300, bloqueio_s: int = 300) -> None:
+
+class _Contador:
+    """Falhas recentes e bloqueios por chave; descarta o que venceu (não cresce sem limite)."""
+
+    def __init__(self, max_falhas: int, janela_s: float, bloqueio_s: float) -> None:
         self.max_falhas = max_falhas
         self.janela_s = janela_s
         self.bloqueio_s = bloqueio_s
-        self._falhas: dict[str, list[float]] = {}
-        self._bloqueado_ate: dict[str, float] = {}
+        self.falhas: dict[object, list[float]] = {}
+        self.bloqueado_ate: dict[object, float] = {}
+
+    def bloqueado(self, chave: object, agora_s: float) -> bool:
+        ate = self.bloqueado_ate.get(chave)
+        if ate is None:
+            return False
+        if agora_s >= ate:
+            del self.bloqueado_ate[chave]
+            self.falhas.pop(chave, None)
+            return False
+        return True
+
+    def registrar_falha(self, chave: object, agora_s: float) -> None:
+        falhas = [t for t in self.falhas.get(chave, []) if agora_s - t < self.janela_s]
+        falhas.append(agora_s)
+        self.falhas[chave] = falhas
+        if len(falhas) >= self.max_falhas:
+            self.bloqueado_ate[chave] = agora_s + self.bloqueio_s
+
+    def zerar(self, chave: object) -> None:
+        self.falhas.pop(chave, None)
+
+    def descartar_vencidos(self, agora_s: float) -> None:
+        for chave in [c for c, ate in self.bloqueado_ate.items() if agora_s >= ate]:
+            del self.bloqueado_ate[chave]
+        for chave in list(self.falhas):
+            recentes = [t for t in self.falhas[chave] if agora_s - t < self.janela_s]
+            if recentes:
+                self.falhas[chave] = recentes
+            else:
+                del self.falhas[chave]
+
+    def limpar(self) -> None:
+        self.falhas.clear()
+        self.bloqueado_ate.clear()
+
+
+class LimiteLogin:
+    """Limite de tentativas de login em memória, por processo (ADR-0007).
+
+    - par (IP, RM digitado): `max_falhas_par` falhas na janela bloqueiam o par;
+    - IP: `max_falhas_ip` falhas na janela, de qualquer RM, bloqueiam o IP.
+    O RM entra na chave exatamente como digitado (mesmo critério da busca do login).
+    `relogio` (segundos, monotônico) pode ser trocado nos testes.
+    """
+
+    def __init__(
+        self,
+        max_falhas_par: int = MAX_FALHAS_PAR,
+        max_falhas_ip: int = MAX_FALHAS_IP,
+        janela_s: float = JANELA_S,
+        bloqueio_s: float = BLOQUEIO_S,
+        relogio: Callable[[], float] = _time.monotonic,
+    ) -> None:
+        self.relogio = relogio
+        self._par = _Contador(max_falhas_par, janela_s, bloqueio_s)
+        self._ip = _Contador(max_falhas_ip, janela_s, bloqueio_s)
         self._lock = threading.Lock()
 
-    def bloqueado(self, ip: str) -> bool:
+    def bloqueado(self, ip: str, rm: str) -> bool:
+        agora_s = self.relogio()
         with self._lock:
-            ate = self._bloqueado_ate.get(ip)
-            if ate is None:
-                return False
-            if _time.monotonic() >= ate:
-                del self._bloqueado_ate[ip]
-                self._falhas.pop(ip, None)
-                return False
-            return True
+            # avalia os dois (cada um descarta o próprio bloqueio vencido)
+            par = self._par.bloqueado((ip, rm), agora_s)
+            por_ip = self._ip.bloqueado(ip, agora_s)
+            return par or por_ip
 
-    def registrar_falha(self, ip: str) -> None:
-        agora_s = _time.monotonic()
+    def registrar_falha(self, ip: str, rm: str) -> None:
+        agora_s = self.relogio()
         with self._lock:
-            falhas = [t for t in self._falhas.get(ip, []) if agora_s - t < self.janela_s]
-            falhas.append(agora_s)
-            self._falhas[ip] = falhas
-            if len(falhas) >= self.max_falhas:
-                self._bloqueado_ate[ip] = agora_s + self.bloqueio_s
+            self._par.descartar_vencidos(agora_s)
+            self._ip.descartar_vencidos(agora_s)
+            self._par.registrar_falha((ip, rm), agora_s)
+            self._ip.registrar_falha(ip, agora_s)
 
-    def registrar_sucesso(self, ip: str) -> None:
+    def registrar_sucesso(self, ip: str, rm: str) -> None:
+        """Login certo zera só as falhas do par (não as do IP)."""
         with self._lock:
-            self._falhas.pop(ip, None)
+            self._par.zerar((ip, rm))
+
+    def tamanho(self) -> int:
+        """Quantidade de entradas guardadas (falhas + bloqueios), para testes e diagnóstico."""
+        with self._lock:
+            return sum(len(c.falhas) + len(c.bloqueado_ate) for c in (self._par, self._ip))
 
     def limpar(self) -> None:
         with self._lock:
-            self._falhas.clear()
-            self._bloqueado_ate.clear()
+            self._par.limpar()
+            self._ip.limpar()
 
 
 limite_login = LimiteLogin()

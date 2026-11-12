@@ -196,12 +196,19 @@ def obter_grupo(db: Session, grupo_id: int, usuario: Professor) -> GrupoRecorren
     return grupo
 
 
-def reservas_do_grupo(db: Session, grupo_id: int) -> list[Reserva]:
+def reservas_do_grupo(db: Session, grupo_id: int, recarregar: bool = False) -> list[Reserva]:
+    """Ocorrências do grupo por data, numa consulta só.
+
+    `recarregar=True` sobrescreve os objetos já na sessão (ex.: logo após o commit da criação, quando
+    `criado_em` e os relacionamentos ainda não foram carregados).
+    """
     stmt = (
         select(Reserva)
         .where(Reserva.grupo_recorrencia_id == grupo_id)
         .order_by(Reserva.data, Reserva.inicio, Reserva.id)
     )
+    if recarregar:
+        stmt = stmt.execution_options(populate_existing=True)
     return list(db.scalars(stmt).unique())
 
 

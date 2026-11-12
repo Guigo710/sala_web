@@ -19,6 +19,7 @@ from app.services.reservas import (
     erro_conflito,
     nova_reserva,
     preparar_bloco,
+    reservas_do_grupo,
 )
 
 
@@ -123,6 +124,5 @@ def confirmar(
             raise erro_conflito(buscar_conflitos(db, bloco.sala.id, datas, bloco.inicio, bloco.fim)) from None
         raise
     db.refresh(grupo)
-    for r in reservas:
-        db.refresh(r)
-    return grupo, reservas
+    # Uma consulta para todas as ocorrências (com sala/professor por join), em vez de um refresh por data.
+    return grupo, reservas_do_grupo(db, grupo.id, recarregar=True)
