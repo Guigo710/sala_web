@@ -1,6 +1,6 @@
 # 10: Reserva avulsa (aulas seguidas) e consultas de reservas
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Blocked by: 06, 08
@@ -19,3 +19,7 @@ Rotas `POST /reservas`, `GET /reservas`, `GET /reservas/minhas`, `GET /reservas/
 - [ ] `GET /reservas` exige exatamente um modo de período (`mes` | `data` | `de`+`ate` ≤ 62 dias) → senão `422 INTERVALO_INVALIDO`; filtros `sala_id`, `professor_id`, `status`.
 - [ ] Respostas públicas não contêm RM; `pode_cancelar` calculado conforme §3.11.
 - [ ] `GET /reservas/minhas` com `periodo` e `status` e ordenação do contrato.
+
+## Comments
+
+- **Forge (2026-11-12):** `services/reservas.py`, `routers/reservas.py`. Verificado: snapshot início/fim, 409 com `conflitos`, encostadas passam, 8 requisições concorrentes → 1×201 + 7×409 (nenhum 500), `DATA_PASSADA`, `SALA_INATIVA`, 403 com `professor_id`, `INTERVALO_INVALIDO`, sem RM na agenda pública.

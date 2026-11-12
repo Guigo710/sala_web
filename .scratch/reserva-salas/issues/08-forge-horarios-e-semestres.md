@@ -1,6 +1,6 @@
 # 08: Horários de aula e semestres (CRUD)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Blocked by: 03
@@ -18,3 +18,7 @@ Além dos CRUDs, criar `services/aulas.py` com `validar_bloco(db, horario_ids, d
 - [ ] Semestres sobrepostos → `409 SEMESTRE_SOBREPOSTO`; `GET /semestres/atual` devolve o que contém hoje ou o próximo; nenhum → `404`.
 - [ ] `validar_bloco` com testes unitários mínimos (turno misto, buraco, inativa, dia inválido, ordem dos ids indiferente).
 - [ ] Excluir semestre com grupo de recorrência → `409 SEMESTRE_EM_USO`.
+
+## Comments
+
+- **Forge (2026-11-12):** `routers/horarios.py`, `routers/semestres.py`, `services/aulas.py` (`validar_bloco`) com testes em `tests/test_validar_bloco.py`. Verificado: `HORARIO_SOBREPOSTO`, `ORDEM_DUPLICADA`, `HORARIO_EM_USO`, `SEMESTRE_SOBREPOSTO`, `SEMESTRE_EM_USO`, `/semestres/atual`.

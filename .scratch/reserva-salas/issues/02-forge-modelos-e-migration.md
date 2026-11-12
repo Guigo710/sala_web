@@ -1,6 +1,6 @@
 # 02: Models SQLAlchemy e migration inicial (com constraint anti-conflito)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Blocked by: 01
@@ -16,3 +16,7 @@ Models SQLAlchemy 2.x (`Mapped[...]`) para todas as tabelas do §2.1 e migration
 - [ ] `ex_reservas_sem_sobreposicao` existe: inserir via SQL duas reservas ativas sobrepostas na mesma sala falha com SQLSTATE `23P01`; se uma estiver `cancelada`, passa; intervalos encostados (`fim = inicio`) passam.
 - [ ] `ex_semestres_sem_sobreposicao`, `uq_softwares_nome_versao` (NULLS NOT DISTINCT), `uq_horarios_turno_ordem` e os CHECKs existem.
 - [ ] FKs com `ON DELETE` iguais ao contrato.
+
+## Comments
+
+- **Forge (2026-11-12):** Models em `app/models/`; migration `alembic/versions/0001_inicial.py` com o DDL do contrato literal. Verificado: upgrade/downgrade/upgrade; via SQL, sobreposição ativa → 23P01, cancelada e encostada passam; `uq_softwares_nome_versao` NULLS NOT DISTINCT e `ex_semestres_sem_sobreposicao` barram.

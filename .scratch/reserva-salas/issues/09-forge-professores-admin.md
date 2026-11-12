@@ -1,6 +1,6 @@
 # 09: Gestão de professores (admin)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Blocked by: 03
@@ -12,3 +12,7 @@ Referências: `docs/api-contrato.md` §4.7
 - [ ] Admin não consegue se desativar, se rebaixar nem se excluir → `422 OPERACAO_EM_SI_MESMO`.
 - [ ] Excluir professor com reservas → `409 PROFESSOR_COM_RESERVAS`.
 - [ ] `PUT /professores/{id}/senha` redefine a senha (`204`).
+
+## Comments
+
+- **Forge (2026-11-12):** `routers/professores.py`. Verificado: RM inválido 422, `RM_DUPLICADO`, `OPERACAO_EM_SI_MESMO` (desativar/rebaixar/excluir a si), exclusão sem reservas 204, redefinição 204.

@@ -36,3 +36,23 @@ backend/
 - Docker: na raiz, `cp .env.example .env && docker compose up --build` → http://localhost:8000/docs
 - Local: `docker compose up db`, depois em `backend/`: `pip install -r requirements.txt`,
   `alembic upgrade head`, `python -m app.seed`, `uvicorn app.main:app --reload`.
+
+## Testes (fumaça)
+
+Contra Postgres real, num banco separado: `DATABASE_URL_TESTE` ou, se ausente, o banco de `DATABASE_URL`
+com sufixo `_teste` (crie antes: `createdb sala_web_teste`). O esquema é recriado com Alembic a cada execução.
+
+```
+cd backend && pytest
+```
+
+A suíte completa é do Sentinela; `tests/` traz só testes de fumaça dos fluxos principais e de `validar_bloco`.
+
+## Notas de implementação
+
+- O seed roda a cada start do container. Admin: criado se `ADMIN_RM` não existir. Equipamentos, softwares,
+  ambientes e grade: só são inseridos **se a tabela estiver vazia** (não desfaz edições do admin).
+  Semestres do ano corrente e do seguinte: por nome, se não existir e não se sobrepuser a outro.
+- `JWT_SECRET` é obrigatório (mínimo 16 caracteres); a API não sobe sem ele.
+- Horários: datas/horas locais em `TZ` (padrão `America/Sao_Paulo`); a sessão do Postgres usa o mesmo fuso.
+

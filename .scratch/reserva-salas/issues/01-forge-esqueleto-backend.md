@@ -1,6 +1,6 @@
 # 01: Esqueleto do backend (FastAPI, config, erros, Dockerfile)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Blocked by: (nenhum)
@@ -19,3 +19,7 @@ Criar a estrutura `backend/app/...` descrita em `backend/README.md`, `requiremen
 - [ ] Um corpo inválido em qualquer rota devolve `422` no formato `{detail, codigo: "VALIDACAO", erros: [...]}`.
 - [ ] Existe uma exceção `ErroApi(status, codigo, detail, **extras)` usada pelos services.
 - [ ] Nenhum segredo fixo no código; tudo vem de variáveis de ambiente.
+
+## Comments
+
+- **Forge (2026-11-12):** Esqueleto em `backend/app` (core/config, db, erros, seguranca, tempo), `requirements.txt`, `Dockerfile` (python:3.12-slim). Envelope §1.4 com handlers de `RequestValidationError` (mensagens em português), `HTTPException` e `Exception` (`ERRO_INTERNO`). Verificado: `/saude` 200, `/docs` 200, compose `db`+`backend` sobe (imagem construída localmente). O serviço `frontend` do compose é do Pixel e não foi testado aqui.

@@ -1,6 +1,6 @@
 # 06: Salas: CRUD, associações, tipos, filtros e disponibilidade
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Blocked by: 05, 08
@@ -14,3 +14,7 @@ Referências: `docs/api-contrato.md` §3.6, §3.7, §4.3
 - [ ] `GET /salas/{id}/disponibilidade?data=` devolve as aulas do dia com `livre`, `passou` e `reserva`.
 - [ ] `DELETE` com qualquer reserva → `409 SALA_COM_RESERVAS`; sem reservas apaga fotos (arquivos inclusive).
 - [ ] `foto_capa_url` e ordenações conforme §3.6/§3.7.
+
+## Comments
+
+- **Forge (2026-11-12):** `routers/salas.py`, `services/salas.py`. Verificado: filtros combinados, livres por `data`+`horario_ids`, inativas 404 para não-admin, disponibilidade, `SALA_COM_RESERVAS`, exclusão apaga fotos/arquivos.

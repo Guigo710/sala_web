@@ -1,6 +1,6 @@
 # 04: Seed idempotente (admin, ambientes, grade, semestres, catálogos)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Blocked by: 02, 03
@@ -23,3 +23,7 @@ Referências: `decisoes.md` (Domínio), `docs/api-contrato.md` §2
 - [ ] Rodar o seed duas vezes não duplica nada nem dá erro.
 - [ ] Após o seed, login com `ADMIN_RM`/`ADMIN_SENHA` funciona e `GET /horarios?dia_semana=6` traz só as 5 aulas da manhã.
 - [ ] Nenhum dado real de pessoas ou senhas fixas no código.
+
+## Comments
+
+- **Forge (2026-11-12):** `app/seed.py`. Verificado: rodar 2x não duplica; login admin funciona; `GET /horarios?dia_semana=6` traz as 5 da manhã. Política: catálogos só são semeados com a tabela vazia (não desfaz edições do admin a cada start) → ver ticket 29.
