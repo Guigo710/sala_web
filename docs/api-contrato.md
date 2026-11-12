@@ -2,7 +2,7 @@
 
 Responsável: Atlas. **Forge implementa e Pixel consome exatamente este documento.**
 Mudanças no contrato só via ticket `Responsável: Atlas`. Regras de negócio detalhadas: `.scratch/reserva-salas/spec.md`.
-Versão: **1.1** (2026-11-12). O que mudou desde a 1.0 está no §7 (Histórico).
+Versão: **1.2** (2026-11-12). O que mudou desde a 1.0 está no §7 (Histórico).
 
 Sumário
 1. Convenções gerais
@@ -41,7 +41,7 @@ Sumário
   - **público**: não exige token. Se um token válido vier, ele é usado (ex.: `pode_cancelar`); token inválido numa rota pública é **ignorado** (tratado como visitante).
   - **professor**: exige token válido de conta ativa com papel `professor` **ou** `admin`.
   - **admin**: exige token válido de conta ativa com papel `admin`.
-- Sem token / token inválido / expirado / conta inativa em rota protegida → `401 NAO_AUTENTICADO`.
+- Sem token / token inválido / expirado / revogado (`ver` diferente de `token_versao`, ADR-0008) / conta inativa em rota protegida → `401 NAO_AUTENTICADO`.
 - Token válido sem papel suficiente → `403 SEM_PERMISSAO`.
 
 ### 1.4 Envelope de erro (todas as respostas 4xx)
@@ -102,6 +102,12 @@ Migrations com Alembic. A primeira migration cria a extensão:
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 ```
 
+Migrations existentes: `0001_inicial` (tudo do §2.1, exceto o abaixo) e `0002_token_versao` (contrato 1.2):
+
+```sql
+ALTER TABLE professores ADD COLUMN token_versao integer NOT NULL DEFAULT 0;
+```
+
 Todas as tabelas têm PK `id serial` (exceto as de associação). `criado_em`/`atualizado_em` são `timestamptz NOT NULL DEFAULT now()`; `atualizado_em` é atualizado pelo ORM (`onupdate`).
 
 ### 2.1 DDL de referência
@@ -117,6 +123,7 @@ CREATE TABLE professores (
     papel          varchar(20)  NOT NULL DEFAULT 'professor'
                    CHECK (papel IN ('professor', 'admin')),
     ativo          boolean      NOT NULL DEFAULT true,
+    token_versao   integer      NOT NULL DEFAULT 0,       -- ADR-0008; migration 0002; nunca exposto no JSON
     criado_em      timestamptz  NOT NULL DEFAULT now(),
     atualizado_em  timestamptz  NOT NULL DEFAULT now()
 );
@@ -463,7 +470,14 @@ Erros: `401 CREDENCIAIS_INVALIDAS` (RM inexistente, senha errada **ou conta inat
 - enquanto bloqueado, responde `429` mesmo com a senha certa; login certo zera as falhas daquele par.
 O IP é o da conexão; `X-Forwarded-For` só vale vindo de proxy listado em `FORWARDED_ALLOW_IPS` (uvicorn).
 
-JWT: HS256, segredo `JWT_SECRET`, expiração `JWT_EXPIRA_MINUTOS` (padrão 480). Claims: `sub` (id do professor, string), `papel`, `iat`, `exp`. A cada requisição o backend recarrega o professor do banco (papel e `ativo` valem do banco, não do token).
+JWT: HS256, segredo `JWT_SECRET`, expiração `JWT_EXPIRA_MINUTOS` (padrão 480). Claims: `sub` (id do professor, string), `papel`, `ver` (inteiro: `token_versao` da conta na emissão), `iat`, `exp`. A cada requisição o backend recarrega o professor do banco (papel e `ativo` valem do banco, não do token).
+
+Revogação (ADR-0008): o token só vale se `ver` for igual ao `token_versao` atual da conta; token sem `ver` é inválido.
+O backend incrementa `token_versao`, derrubando **todas** as sessões da conta, quando:
+- a própria senha é trocada (`PUT /auth/me/senha`; a sessão atual recebe token novo na resposta);
+- o admin redefine a senha (`PUT /professores/{id}/senha`);
+- o admin muda o `papel` ou desativa a conta (`PUT /professores/{id}` com `papel` diferente do atual ou `ativo` de `true` para `false`).
+Login, reativação e mudança de nome/e-mail não incrementam.
 
 #### `GET /auth/me` (professor)
 `200` → `Usuario`.
@@ -472,7 +486,10 @@ JWT: HS256, segredo `JWT_SECRET`, expiração `JWT_EXPIRA_MINUTOS` (padrão 480)
 ```json
 { "senha_atual": "minhaSenha123", "nova_senha": "novaSenha456" }
 ```
-`204` sem corpo. Erros: `422 SENHA_ATUAL_INCORRETA`; `422 VALIDACAO` se `nova_senha` fora de 8–128 caracteres (§1.8).
+`200` com o **mesmo corpo do `POST /auth/login`** (`access_token`, `token_type`, `expira_em`, `usuario`): o token novo
+substitui o da sessão atual; todos os tokens anteriores da conta, inclusive o usado nesta requisição, deixam de valer (ADR-0008).
+(Até a 1.1 era `204`.) Erros: `422 SENHA_ATUAL_INCORRETA`; `422 VALIDACAO` se `nova_senha` fora de 8–128 caracteres (§1.8).
+Erro não muda nada: `token_versao` e o token atual seguem valendo.
 
 ### 4.3 Salas
 
@@ -648,12 +665,15 @@ Query opcional: `busca` (nome ou RM, ILIKE), `papel`, `ativo` (bool). `200` → 
 Substituição (§1.6): `nome`, `papel` e `ativo` **obrigatórios**; `email` opcional (omitido ou `null` → grava `null`). Pixel envia sempre os quatro.
 RM não é editável. `200` → `Usuario`.
 Erros: `422 OPERACAO_EM_SI_MESMO` (admin tentando se desativar ou tirar o próprio papel admin).
+Mudar `papel` ou passar `ativo` de `true` para `false` encerra todas as sessões da conta editada (§4.2, ADR-0008).
 
 #### `PUT /professores/{id}/senha`
 ```json
 { "nova_senha": "outraSenha789" }
 ```
-`204`. (Redefinição pelo admin; não pede senha atual. `nova_senha` 8–128.)
+`204`. (Redefinição pelo admin; não pede senha atual. `nova_senha` 8–128.) Encerra todas as sessões da conta
+(§4.2, ADR-0008). Se `{id}` for o próprio admin, a sessão dele também cai e ele precisa entrar de novo; para trocar a
+própria senha mantendo a sessão, use `PUT /auth/me/senha`.
 
 #### `DELETE /professores/{id}`
 `204`. Erros: `409 PROFESSOR_COM_RESERVAS` (a conta aparece em alguma reserva ou grupo de recorrência, como professor, `criado_por` ou `cancelada_por`, de qualquer status: desative), `422 OPERACAO_EM_SI_MESMO`.
@@ -849,7 +869,7 @@ Sem nada a cancelar → `200` com `canceladas: 0`. Erros: `403 SEM_PERMISSAO`.
 | HTTP | `codigo` | Quando |
 |---|---|---|
 | 400 | `REQUISICAO_INVALIDA` | Corpo que o framework não consegue ler (ex.: multipart malformado) |
-| 401 | `NAO_AUTENTICADO` | Token ausente/inválido/expirado ou conta inativa em rota protegida |
+| 401 | `NAO_AUTENTICADO` | Token ausente/inválido/expirado/revogado ou conta inativa em rota protegida |
 | 401 | `CREDENCIAIS_INVALIDAS` | Login com RM/senha errados ou conta inativa |
 | 403 | `SEM_PERMISSAO` | Papel insuficiente; reserva/grupo de outro professor; professor enviando `professor_id` |
 | 404 | `NAO_ENCONTRADO` | Recurso inexistente (ou sala inativa para não-admin); rota inexistente |
@@ -889,6 +909,15 @@ Respostas `503` só existem em `GET /saude` (corpo `{"status": "erro"}`, fora do
 ---
 
 ## 7. Histórico de mudanças
+
+### 1.2 (2026-11-12): revogação de tokens (ticket 41, ADR-0008)
+Mudanças que **exigem código**:
+- Modelo: coluna `professores.token_versao integer NOT NULL DEFAULT 0`, migration `0002_token_versao` (§2). Forge (ticket 41).
+- JWT ganha a claim `ver`; token sem `ver` ou com `ver` diferente de `token_versao` → inválido (§1.3, §4.2). Forge (ticket 41).
+  Na implantação, todos os tokens antigos caem: cada usuário entra de novo uma vez.
+- `token_versao` incrementa na troca/redefinição de senha, na mudança de `papel` e na desativação (§4.2, §4.7). Forge (ticket 41).
+- **`PUT /auth/me/senha` passa de `204` para `200`** com o corpo do login (token novo para a sessão atual). Forge (ticket 41) e Pixel (ticket 46), juntos.
+- `PUT /professores/{id}/senha` no próprio admin derruba a sessão dele. Pixel trata (ticket 46).
 
 ### 1.1 (2026-11-12): triagem do ticket 29 e revisão arquitetural
 Mudanças que **exigem código** (ordens 30–37):

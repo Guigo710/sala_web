@@ -34,3 +34,4 @@ Termos do domínio. Use exatamente estes nomes em código, rotas, tickets e tela
 | **Disponibilidade** | Situação livre/ocupada de um ambiente por aula numa data. | |
 | **Cancelamento** | Mudar a reserva para `cancelada` (nunca apagar). Dono até o início da aula; admin sempre. | "excluir reserva" |
 | **Agenda** | Visão de calendário (mês, semana, dia) das reservas. | |
+| **Sessão** | Um token JWT emitido no login (um por dispositivo/navegador). Todas as sessões de uma conta caem juntas ao trocar/redefinir a senha, mudar o papel ou desativar a conta (ADR-0008). | "login ativo" |

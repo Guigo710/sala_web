@@ -1,6 +1,6 @@
 # ADR-0004: Autenticação por RM + senha com JWT Bearer, papéis professor/admin
 
-Status: aceito (item do limite de login substituído pelo ADR-0007) · Data: 2026-11-12 · Autor: Atlas
+Status: aceito (item do limite de login substituído pelo ADR-0007; revogação de tokens no ADR-0008) · Data: 2026-11-12 · Autor: Atlas
 
 ## Contexto
 O README original sugeria o professor "informar o RM" no formulário, o que permite reservar em nome
