@@ -3,29 +3,56 @@
 Interface React + Vite. Responsável: **Pixel**. Consome `../docs/api-contrato.md` (não inventar rotas;
 se faltar algo, ticket `Responsável: Atlas`). Tickets: `../.scratch/reserva-salas/issues/` (`Responsável: Pixel`).
 
-Stack: React 18, Vite, react-router, FullCalendar (somente `@fullcalendar/react`, `daygrid`, `timegrid`,
-`interaction`), ESLint, Vitest + Testing Library.
+Stack: React 18, Vite 6, react-router 6, FullCalendar 6 (somente `@fullcalendar/react`, `daygrid`, `timegrid`,
+`interaction`), ESLint 9, Vitest + Testing Library.
 
-## Estrutura esperada
+## Estrutura
 
 ```
 frontend/
-├── Dockerfile                # node:20, npm ci, vite --host 0.0.0.0 --port 5173
-├── package.json              # scripts: dev, build, lint, test
-├── vite.config.js
+├── Dockerfile                # node:22-slim, npm ci, vite --host 0.0.0.0 --port 5173
+├── package.json              # scripts: dev, dev:mock, build, lint, test
+├── vite.config.js            # dev server 0.0.0.0:5173 + config do Vitest
+├── eslint.config.js
 ├── index.html
 └── src/
-    ├── main.jsx
+    ├── main.jsx              # providers; liga o mock só em dev com VITE_USE_MOCK=true
     ├── App.jsx               # rotas
-    ├── api/                  # conectores: cliente.js (base VITE_API_URL, Bearer, erros) + 1 arquivo por recurso
-    ├── auth/                 # AuthContext, RotaProtegida, RotaAdmin
-    ├── components/           # Layout, Cabecalho, CartaoSala, Galeria, ModalReserva, PreviaRecorrencia, ...
-    ├── pages/                # Login, Agenda, Salas, SalaDetalhe, MinhasReservas, admin/*
-    ├── utils/                # datas (dia da semana ISO ↔ FullCalendar), formatação
-    └── styles/
+    ├── api/                  # conectores: cliente.js (VITE_API_URL, Bearer, ErroApi, 401) + 1 arquivo por recurso
+    │   └── mock/             # API simulada em memória (só desenvolvimento, fora do build)
+    ├── auth/                 # AuthContext, RotaProtegida, RotaAdmin, sessão em localStorage
+    ├── components/           # Layout, Cabecalho, CartaoSala, Galeria, ModalReserva, PreviaRecorrencia,
+    │                         # SeletorAulas, DisponibilidadeDia, DialogoCancelar, Modal, avisos...
+    ├── hooks/                # useCarregar, useTipos
+    ├── pages/                # Login, Agenda, Salas, SalaDetalhe, MinhasReservas, MinhaConta, admin/*
+    ├── utils/                # datas (dia ISO ↔ FullCalendar), aulas seguidas, formatação
+    └── styles/global.css
 ```
+
+## Rotas da interface
+
+| Rota | Acesso | Tela |
+|---|---|---|
+| `/agenda` | público | FullCalendar mês/semana/dia, filtro por ambiente (`?sala=`) |
+| `/ambientes` | público | Lista com filtros na URL (tipo, capacidade, equipamento, software, busca, livre em data + aulas) |
+| `/ambientes/:id` | público | Galeria, equipamentos, softwares, disponibilidade do dia, botão Reservar |
+| `/login` | público | RM + senha |
+| `/minhas-reservas` | professor | Futuras/Passadas, cancelar uma ou a recorrência |
+| `/minha-conta` | professor | Dados e troca de senha |
+| `/admin/*` | admin | ambientes (+ equipamentos, softwares e fotos do ambiente), equipamentos, softwares, professores, horários, semestres |
 
 ## Rodar
 
-- Docker: na raiz, `docker compose up --build` → http://localhost:5173
-- Local: em `frontend/`, `npm install && npm run dev` (com `VITE_API_URL=http://localhost:8000`).
+- Docker: na raiz, `docker compose up --build` → http://localhost:5173 (o Compose passa `VITE_API_URL`).
+- Local: em `frontend/`, `npm install && npm run dev` (com `VITE_API_URL=http://localhost:8000`; padrão é esse).
+- Sem backend: `npm run dev:mock` (ou `VITE_USE_MOCK=true npm run dev`). Sobe uma API simulada em memória
+  (reinicia a cada recarga da página). Contas: `admin` / `admin1234` e `123456` / `senha1234`.
+  O mock só existe em desenvolvimento: `npm run build` não o inclui.
+
+## Verificar
+
+```
+npm run lint
+npm test
+npm run build
+```
