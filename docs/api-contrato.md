@@ -2,6 +2,7 @@
 
 Responsável: Atlas. **Forge implementa e Pixel consome exatamente este documento.**
 Mudanças no contrato só via ticket `Responsável: Atlas`. Regras de negócio detalhadas: `.scratch/reserva-salas/spec.md`.
+Versão: **1.1** (2026-11-12). O que mudou desde a 1.0 está no §7 (Histórico).
 
 Sumário
 1. Convenções gerais
@@ -12,6 +13,7 @@ Sumário
    - 4.7 Professores · 4.8 Horários de aula · 4.9 Semestres · 4.10 Reservas
 5. Matriz de permissões
 6. Catálogo de códigos de erro
+7. Histórico de mudanças
 
 ---
 
@@ -28,7 +30,7 @@ Sumário
 ### 1.2 Datas e horas
 - Fuso de referência: `America/Sao_Paulo` (variável `TZ`). "Agora" = hora local do servidor nesse fuso.
 - Data: `"YYYY-MM-DD"` (ex.: `"2026-09-15"`).
-- Hora: `"HH:MM"` 24h, sem segundos (ex.: `"07:30"`). O backend aceita `"HH:MM:SS"` na entrada mas sempre responde `"HH:MM"`.
+- Hora: `"HH:MM"` 24h, sem segundos (ex.: `"07:30"`). O backend aceita `"HH:MM:SS"` na entrada, **descarta os segundos** ao gravar e sempre responde `"HH:MM"`.
 - Data-hora (`criado_em`, `expira_em`, ...): ISO 8601 com fuso, ex.: `"2026-09-01T10:15:00-03:00"`.
 - Dia da semana: inteiro ISO, **1 = segunda … 6 = sábado, 7 = domingo** (Python `date.isoweekday()`).
   Atenção Pixel: FullCalendar usa 0 = domingo; converter com `iso % 7`.
@@ -56,8 +58,39 @@ Campos extras, só quando indicados:
 
 Erros 500 seguem o mesmo envelope com `codigo = ERRO_INTERNO` e mensagem genérica (sem stack trace).
 
+Erros gerados pelo próprio framework (rota/método inexistente, corpo multipart malformado, ...) também usam o
+envelope, com os códigos genéricos do §6 (`NAO_ENCONTRADO`, `METODO_NAO_PERMITIDO`, `REQUISICAO_INVALIDA`,
+`ERRO_HTTP`). **Pixel:** trate qualquer `codigo` que não conheça mostrando o `detail`; não dependa de a lista
+do §6 ser fechada.
+
 ### 1.5 CORS
 Origens permitidas em `CORS_ORIGENS` (separadas por vírgula; padrão `http://localhost:5173`). Métodos `GET, POST, PUT, PATCH, DELETE`; headers `Authorization, Content-Type`.
+**Toda** resposta, inclusive as de erro (`4xx`, `413` recusado antes de ler o corpo, `500`), leva os cabeçalhos
+CORS quando a origem é permitida. Sem eles o navegador esconde o envelope e o frontend só vê "sem conexão".
+
+### 1.6 Semântica de `PUT`
+- `PUT` **substitui** o recurso inteiro (campos editáveis). Campo opcional omitido é gravado como `null`.
+- Campos que no `POST` têm valor padrão (ex.: `ativo`) são **obrigatórios no `PUT`**: omitir `ativo` num `PUT`
+  é `422 VALIDACAO` (evita reativar sem querer um ambiente ou aula desativados).
+- Não há `PATCH` parcial na v1 (exceto a legenda de foto, §4.4). Para ativar/desativar, o cliente lê o recurso
+  (`GET /salas/{id}`, ou o item já listado) e envia o `PUT` completo com `ativo` trocado.
+
+### 1.7 Relógio ("agora")
+- "Agora" é sempre o relógio do **servidor** no fuso `TZ` (§1.2). Os campos `passou` (disponibilidade) e
+  `pode_cancelar` (reserva) são calculados no servidor e são a referência.
+- O cliente pode usar o próprio relógio só para **dicas de interface** (desabilitar um dia passado no calendário,
+  estimar quantas ocorrências serão canceladas). A decisão final é do servidor (`DATA_PASSADA`,
+  `RESERVA_JA_INICIADA`, contagem devolvida em `POST /reservas/grupos/{id}/cancelar`).
+
+### 1.8 Limites de texto em credenciais
+| Campo | Limite | Fora do limite |
+|---|---|---|
+| `rm` no login | 1–50 caracteres | `422 VALIDACAO` |
+| `senha` no login, `senha_atual` | 1–128 caracteres | `422 VALIDACAO` |
+| `senha` (criação de conta), `nova_senha` | 8–128 caracteres | `422 VALIDACAO` |
+| `rm` na criação de conta | regex `^[A-Za-z0-9]{3,20}$` | `422 VALIDACAO` |
+
+O bcrypt só considera os primeiros 72 bytes da senha (ADR-0004); senhas maiores são aceitas, mas o excedente não conta.
 
 ---
 
@@ -423,7 +456,12 @@ Corpo JSON (não é form OAuth2):
   "usuario": { /* Usuario */ }
 }
 ```
-Erros: `401 CREDENCIAIS_INVALIDAS` (RM inexistente, senha errada **ou conta inativa**: mesma mensagem "RM ou senha inválidos."), `429 MUITAS_TENTATIVAS` (5 falhas do mesmo IP em 5 min bloqueiam o IP por 5 min).
+Limites dos campos: §1.8.
+Erros: `401 CREDENCIAIS_INVALIDAS` (RM inexistente, senha errada **ou conta inativa**: mesma mensagem "RM ou senha inválidos."), `429 MUITAS_TENTATIVAS` (ADR-0007):
+- 5 falhas do mesmo **par (IP, RM)** em 5 min bloqueiam esse par por 5 min;
+- 20 falhas do mesmo **IP** em 5 min (qualquer RM) bloqueiam o IP por 5 min;
+- enquanto bloqueado, responde `429` mesmo com a senha certa; login certo zera as falhas daquele par.
+O IP é o da conexão; `X-Forwarded-For` só vale vindo de proxy listado em `FORWARDED_ALLOW_IPS` (uvicorn).
 
 JWT: HS256, segredo `JWT_SECRET`, expiração `JWT_EXPIRA_MINUTOS` (padrão 480). Claims: `sub` (id do professor, string), `papel`, `iat`, `exp`. A cada requisição o backend recarrega o professor do banco (papel e `ativo` valem do banco, não do token).
 
@@ -434,7 +472,7 @@ JWT: HS256, segredo `JWT_SECRET`, expiração `JWT_EXPIRA_MINUTOS` (padrão 480)
 ```json
 { "senha_atual": "minhaSenha123", "nova_senha": "novaSenha456" }
 ```
-`204` sem corpo. Erros: `422 SENHA_ATUAL_INCORRETA`; `422 VALIDACAO` se `nova_senha` < 8 caracteres.
+`204` sem corpo. Erros: `422 SENHA_ATUAL_INCORRETA`; `422 VALIDACAO` se `nova_senha` fora de 8–128 caracteres (§1.8).
 
 ### 4.3 Salas
 
@@ -485,15 +523,15 @@ Grade do dia para a sala: todas as aulas **ativas válidas no dia da semana de `
   "data": "2026-09-15",
   "dia_semana": 2,
   "aulas": [
-    { "horario": { /* HorarioAula id 1 */ }, "livre": false,
+    { "horario": { /* HorarioAula id 1 */ }, "livre": false, "passou": false,
       "reserva": { "id": 101, "professor": { "id": 7, "nome": "Maria Souza" }, "inicio": "07:30", "fim": "09:10" } },
-    { "horario": { /* HorarioAula id 2 */ }, "livre": false,
+    { "horario": { /* HorarioAula id 2 */ }, "livre": false, "passou": false,
       "reserva": { "id": 101, "professor": { "id": 7, "nome": "Maria Souza" }, "inicio": "07:30", "fim": "09:10" } },
     { "horario": { /* HorarioAula id 3 */ }, "livre": true, "passou": false, "reserva": null }
   ]
 }
 ```
-Cada item tem `horario`, `livre` (nenhuma reserva ativa sobrepõe a aula), `passou` (`agora >= data + horario.inicio`) e `reserva` (a reserva ativa que ocupa, ou `null`). Domingo sem aulas → `aulas: []`. Sala inativa → `404` (exceto admin).
+Cada item tem **sempre** os quatro campos: `horario`, `livre` (nenhuma reserva ativa sobrepõe a aula), `passou` (`agora >= data + horario.inicio`, relógio do servidor, §1.7; vale também para aulas ocupadas) e `reserva` (a reserva ativa que ocupa, ou `null`). Domingo sem aulas → `aulas: []`. Sala inativa → `404` (exceto admin).
 
 #### `POST /salas` (admin)
 ```json
@@ -510,7 +548,7 @@ Obrigatórios: `nome` (1–80), `tipo`, `capacidade` (> 0). Opcionais: `descrica
 `201` → `SalaDetalhe`. Erros: `409 NOME_DUPLICADO`.
 
 #### `PUT /salas/{id}` (admin)
-Mesmo corpo do `POST` (substituição completa dos campos básicos; equipamentos, softwares e fotos têm rotas próprias).
+Mesmo corpo do `POST` (substituição completa dos campos básicos; equipamentos, softwares e fotos têm rotas próprias), mas com `ativo` **obrigatório** (§1.6). Ativar/desativar = `PUT` completo com `ativo` trocado.
 `200` → `SalaDetalhe`. Erros: `409 NOME_DUPLICADO`.
 
 #### `DELETE /salas/{id}` (admin)
@@ -531,7 +569,7 @@ Erros: `404 NAO_ENCONTRADO` (equipamento inexistente), `422 VALIDACAO` (equipame
 ```json
 { "software_ids": [4, 5, 9] }
 ```
-Substitui toda a lista. `200` → `SalaDetalhe`. Erros: `404 NAO_ENCONTRADO` (software inexistente).
+Substitui toda a lista. Ids repetidos são ignorados (a lista é um conjunto; diferente de equipamentos, onde cada item traz quantidade e a repetição é ambígua). `200` → `SalaDetalhe`. Erros: `404 NAO_ENCONTRADO` (software inexistente).
 
 ### 4.4 Fotos
 
@@ -549,7 +587,7 @@ Erros: `413 ARQUIVO_GRANDE`, `415 TIPO_ARQUIVO_INVALIDO`.
 ```json
 { "legenda": "Nova legenda" }
 ```
-`200` → `Foto`. Foto de outra sala → `404`.
+`legenda` ausente, `null` ou vazia remove a legenda. `200` → `Foto`. Foto de outra sala → `404`.
 
 #### `DELETE /salas/{id}/fotos/{foto_id}` (admin)
 `204`. Apaga registro e arquivo.
@@ -600,13 +638,14 @@ Query opcional: `busca` (nome ou RM, ILIKE), `papel`, `ativo` (bool). `200` → 
 ```json
 { "rm": "123456", "nome": "Maria Souza", "email": null, "senha": "senhaInicial1", "papel": "professor" }
 ```
-`rm` regex `^[A-Za-z0-9]{3,20}$`; `senha` ≥ 8; `papel` padrão `professor`; `email` opcional (formato e-mail). Conta nasce `ativo = true`.
+`rm` regex `^[A-Za-z0-9]{3,20}$`; `senha` 8–128 (§1.8); `papel` padrão `professor`; `email` opcional (formato e-mail). Conta nasce `ativo = true`.
 `201` → `Usuario`. Erros: `409 RM_DUPLICADO`.
 
 #### `PUT /professores/{id}`
 ```json
 { "nome": "Maria Souza", "email": "maria@fatec.sp.gov.br", "papel": "admin", "ativo": true }
 ```
+Substituição (§1.6): `nome`, `papel` e `ativo` **obrigatórios**; `email` opcional (omitido ou `null` → grava `null`). Pixel envia sempre os quatro.
 RM não é editável. `200` → `Usuario`.
 Erros: `422 OPERACAO_EM_SI_MESMO` (admin tentando se desativar ou tirar o próprio papel admin).
 
@@ -614,10 +653,10 @@ Erros: `422 OPERACAO_EM_SI_MESMO` (admin tentando se desativar ou tirar o própr
 ```json
 { "nova_senha": "outraSenha789" }
 ```
-`204`. (Redefinição pelo admin; não pede senha atual.)
+`204`. (Redefinição pelo admin; não pede senha atual. `nova_senha` 8–128.)
 
 #### `DELETE /professores/{id}`
-`204`. Erros: `409 PROFESSOR_COM_RESERVAS` (tem qualquer reserva ou grupo: desative), `422 OPERACAO_EM_SI_MESMO`.
+`204`. Erros: `409 PROFESSOR_COM_RESERVAS` (a conta aparece em alguma reserva ou grupo de recorrência, como professor, `criado_por` ou `cancelada_por`, de qualquer status: desative), `422 OPERACAO_EM_SI_MESMO`.
 
 ### 4.8 Horários de aula
 
@@ -636,10 +675,12 @@ Query opcional: `dia_semana` (1–7: só aulas que valem nesse dia), `turno`, `i
 Erros: `409 ORDEM_DUPLICADA` (turno+ordem já existe), `409 HORARIO_SOBREPOSTO` (sobrepõe outra aula ativa que vale em algum dia em comum), `422 VALIDACAO` (`fim <= inicio`, dias fora de 1–7, lista vazia).
 
 #### `PUT /horarios/{id}` (admin)
-Mesmo corpo; mesmas regras. Não altera reservas existentes (elas guardam `inicio`/`fim`). `200` → `HorarioAula`.
+Mesmo corpo, com `ativo` **obrigatório** (§1.6); mesmas regras. Não altera reservas existentes (elas guardam `inicio`/`fim`). `200` → `HorarioAula`.
 
 #### `DELETE /horarios/{id}` (admin)
-`204`. Erros: `409 HORARIO_EM_USO` (referenciado por alguma reserva: use `ativo=false`).
+`204`. Erros: `409 HORARIO_EM_USO` (a aula é `horario_inicio_id` ou `horario_fim_id` de alguma reserva: use `ativo=false`).
+A aula do meio de um bloco de 3+ aulas não é referenciada por FK e **pode** ser excluída; a reserva continua válida
+porque guarda `inicio`/`fim` (ADR-0002).
 
 ### 4.9 Semestres
 
@@ -685,6 +726,11 @@ Exemplo de conflito `409`:
 ```
 (`professor_id` opcional, mesmas regras; não afeta o resultado, só é validado.)
 Série: `data_inicio`, `+7`, `+14`, … até `semestre.data_fim` inclusive, onde `semestre` contém `data_inicio`.
+- As regras comuns (aulas, sala ativa, `DATA_PASSADA`) são avaliadas sobre `data_inicio`, **na prévia e na
+  confirmação**. Se a aula de hoje já começou, a série tem de começar na semana seguinte.
+- `data_inicio` **não** precisa estar livre: se estiver ocupada, aparece na prévia com `livre: false`, e o cliente
+  simplesmente não a envia em `datas`. Por isso, ao montar a recorrência, a interface pode deixar escolher aulas
+  ocupadas na primeira data.
 `200`:
 ```json
 {
@@ -717,7 +763,8 @@ Validade das aulas no dia da semana é a mesma em todas as datas da série (mesm
   "observacao": "Programação I - ADS 1º sem."
 }
 ```
-- `datas`: não vazia, sem repetição; cada uma deve pertencer à série da prévia (senão `422 DATA_FORA_DA_SERIE`). Normalmente Pixel envia as `livres` da prévia, permitindo ao professor desmarcar outras.
+- `datas`: não vazia, sem repetição; cada uma deve pertencer à série da prévia (senão `422 DATA_FORA_DA_SERIE`). Normalmente Pixel envia as `livres` da prévia, permitindo ao professor desmarcar outras. `datas` não precisa conter `data_inicio`.
+- O **dono do grupo** é `grupos_recorrencia.professor_id` (o professor da reserva), não `criado_por_id`: é ele quem vê e cancela o grupo, mesmo quando foi o admin que criou.
 - Tudo numa transação: cria 1 `grupos_recorrencia` + 1 `reservas` por data. Se **qualquer** data conflitar → nada é gravado, `409 CONFLITO_RESERVA` com **todos** os conflitos encontrados (o cliente refaz a prévia).
 
 `201`:
@@ -733,9 +780,11 @@ Erros: regras comuns, `422 SEM_SEMESTRE`, `422 DATA_FORA_DA_SERIE`, `409 CONFLIT
 Exatamente **um** dos modos de período é obrigatório:
 - `mes=YYYY-MM`, ou
 - `data=YYYY-MM-DD`, ou
-- `de=YYYY-MM-DD&ate=YYYY-MM-DD` (inclusivos, `ate >= de`, no máximo 62 dias).
+- `de=YYYY-MM-DD&ate=YYYY-MM-DD` (inclusivos, `ate >= de`, no máximo **62 dias contando as duas pontas**, ou seja `ate - de <= 61`; ex.: `de=2026-09-01&ate=2026-11-01` vale, `ate=2026-11-02` não).
 
-Nenhum, mais de um, ou intervalo inválido → `422 INTERVALO_INVALIDO`.
+Nenhum modo, mais de um, só `de` ou só `ate`, `ate < de`, intervalo acima de 62 dias ou `mes` fora do formato `AAAA-MM` → `422 INTERVALO_INVALIDO`.
+`data`, `de` ou `ate` que não são datas válidas → `422 VALIDACAO` (erro de tipo do parâmetro, com `erros`).
+A maior visão do FullCalendar (mês, 6 semanas) tem 42 dias, dentro do limite.
 Filtros opcionais: `sala_id` (repetível), `professor_id`, `status` = `ativa` (padrão) | `cancelada` | `todas`.
 Ordenação: `data`, `inicio`, nome da sala.
 `200` → `Reserva[]`. (Nota Pixel: FullCalendar entrega `end` exclusivo; envie `ate = end - 1 dia`.)
@@ -765,7 +814,7 @@ Corpo opcional:
 Erros: `403 SEM_PERMISSAO` (professor, reserva de outro), `409 RESERVA_JA_CANCELADA`, `422 RESERVA_JA_INICIADA` (professor e `agora >= data + inicio`; admin nunca recebe esse erro).
 
 #### `POST /reservas/grupos/{grupo_id}/cancelar` (professor: dono; admin: qualquer)
-Corpo opcional `{ "motivo": "..." }`. Cancela todas as ocorrências do grupo com `status = ativa` e `data + inicio > agora` (vale também para admin).
+Corpo opcional `{ "motivo": "..." }`. Cancela todas as ocorrências do grupo com `status = ativa` e `data + inicio > agora` (vale também para admin). A contagem que o cliente mostra antes de confirmar é estimativa (§1.7); vale a `canceladas` da resposta.
 `200`:
 ```json
 { "grupo_recorrencia_id": 14, "canceladas": 9, "reservas_ids": [120, 121, 122, 123, 124, 125, 126, 127, 128] }
@@ -799,10 +848,12 @@ Sem nada a cancelar → `200` com `canceladas: 0`. Erros: `403 SEM_PERMISSAO`.
 
 | HTTP | `codigo` | Quando |
 |---|---|---|
+| 400 | `REQUISICAO_INVALIDA` | Corpo que o framework não consegue ler (ex.: multipart malformado) |
 | 401 | `NAO_AUTENTICADO` | Token ausente/inválido/expirado ou conta inativa em rota protegida |
 | 401 | `CREDENCIAIS_INVALIDAS` | Login com RM/senha errados ou conta inativa |
 | 403 | `SEM_PERMISSAO` | Papel insuficiente; reserva/grupo de outro professor; professor enviando `professor_id` |
-| 404 | `NAO_ENCONTRADO` | Recurso inexistente (ou sala inativa para não-admin) |
+| 404 | `NAO_ENCONTRADO` | Recurso inexistente (ou sala inativa para não-admin); rota inexistente |
+| 405 | `METODO_NAO_PERMITIDO` | Rota existe, mas não com esse método |
 | 409 | `CONFLITO_RESERVA` | Sobreposição com reserva ativa (traz `conflitos`) |
 | 409 | `RESERVA_JA_CANCELADA` | Cancelar reserva já cancelada |
 | 409 | `NOME_DUPLICADO` | Nome único repetido (sala, equipamento, software nome+versão, semestre) |
@@ -829,5 +880,28 @@ Sem nada a cancelar → `200` com `canceladas: 0`. Erros: `403 SEM_PERMISSAO`.
 | 422 | `ORDEM_FOTOS_INVALIDA` | Lista de reordenação não bate com as fotos da sala |
 | 422 | `SENHA_ATUAL_INCORRETA` | Troca de senha com senha atual errada |
 | 422 | `OPERACAO_EM_SI_MESMO` | Admin desativando, rebaixando ou excluindo a si mesmo |
-| 429 | `MUITAS_TENTATIVAS` | Limite de tentativas de login |
+| 429 | `MUITAS_TENTATIVAS` | Limite de tentativas de login (ADR-0007) |
+| 4xx | `ERRO_HTTP` | Outro erro HTTP gerado pelo framework, sem código próprio (reserva; não deve ocorrer no uso normal) |
 | 500 | `ERRO_INTERNO` | Erro inesperado |
+
+Respostas `503` só existem em `GET /saude` (corpo `{"status": "erro"}`, fora do envelope).
+
+---
+
+## 7. Histórico de mudanças
+
+### 1.1 (2026-11-12): triagem do ticket 29 e revisão arquitetural
+Mudanças que **exigem código** (ordens 30–37):
+- `PUT /salas/{id}` e `PUT /horarios/{id}`: `ativo` passa a ser obrigatório (§1.6). Pixel já envia; Forge ajusta o schema (ticket 32).
+- Login: limite por par (IP, RM) mais teto por IP (§4.2, ADR-0007). Forge (ticket 31).
+- CORS em todas as respostas de erro (§1.5). Forge (ticket 30).
+- Seed: semestres também só com a tabela vazia (ADR-0006). Forge (ticket 34).
+
+Esclarecimentos (o backend já se comporta assim; só passou a estar escrito):
+- §1.2 segundos descartados; §1.4 e §6 códigos genéricos `REQUISICAO_INVALIDA`, `METODO_NAO_PERMITIDO`, `ERRO_HTTP`.
+- §1.6 semântica de `PUT`; §1.7 relógio do servidor como referência; §1.8 limites de RM/senha.
+- §4.3 `passou` sempre presente; `software_ids` repetidos ignorados. §4.4 legenda vazia remove.
+- §4.7 `PUT /professores` (obrigatórios) e vínculos que impedem excluir professor.
+- §4.8 `HORARIO_EM_USO` só para aulas referenciadas por FK.
+- §4.10 `DATA_PASSADA` sobre `data_inicio` na recorrência; `data_inicio` pode estar ocupada; dono do grupo;
+  62 dias contando as duas pontas; formatos inválidos de `mes` vs. `data`/`de`/`ate`.

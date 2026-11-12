@@ -84,9 +84,12 @@ Não há autocadastro: só o admin cria contas. O primeiro admin vem de variáve
 
 ### RN06 Recorrência semanal
 - O professor informa ambiente, data inicial e aulas (mesmas regras de RN03). As ocorrências são a data inicial e todas as datas `+7, +14, …` dias até a `data_fim` do **semestre que contém a data inicial**. Sem semestre contendo a data inicial: erro 422 `SEM_SEMESTRE`.
+- As regras de criação (aulas válidas, ambiente ativo, início no futuro) valem para a data inicial. A data inicial
+  pode estar ocupada: aparece na prévia como conflito e o professor não a reserva.
 - **Prévia** (não grava nada): lista cada data com `livre: true|false` e, se ocupada, quem ocupa.
 - **Confirmação**: o cliente envia explicitamente as datas que quer reservar (normalmente só as livres). O servidor valida que cada data pertence à série, e grava todas numa transação: se alguma ficou ocupada entre a prévia e a confirmação, nada é gravado e a API devolve 409 com os conflitos atuais (o cliente refaz a prévia).
-- Todas as ocorrências gravadas compartilham um `grupo_recorrencia_id` (tabela `grupos_recorrencia`).
+- Todas as ocorrências gravadas compartilham um `grupo_recorrencia_id` (tabela `grupos_recorrencia`). O dono do grupo é o professor das
+  reservas (não quem as criou): ele vê e cancela o grupo, mesmo quando o admin o criou em seu nome.
 
 ### RN07 Cancelamento
 - Cancelar não apaga: `status = 'cancelada'`, grava `cancelada_em`, `cancelada_por_id` e `motivo_cancelamento` opcional.
@@ -99,6 +102,7 @@ Não há autocadastro: só o admin cria contas. O primeiro admin vem de variáve
 - Login com RM + senha → JWT Bearer (HS256, expira em `JWT_EXPIRA_MINUTOS`, padrão 480). Senhas com bcrypt.
 - O professor dono da reserva vem **sempre do token**. Professor que envia `professor_id` no corpo recebe 403. Admin pode enviar `professor_id` para reservar em nome de outro.
 - Conta inativa não loga (401) e tokens dela passam a ser rejeitados (401).
+- Erros seguidos de senha bloqueiam temporariamente o login daquele RM naquele IP (e, acima de um teto, o IP): ADR-0007.
 - Admin não pode desativar a si mesmo nem remover o próprio papel de admin (422 `OPERACAO_EM_SI_MESMO`).
 - Rotas de leitura do catálogo e da agenda são públicas; a agenda pública mostra o **nome** do professor, nunca o RM.
 - Matriz completa de permissões por rota: `docs/api-contrato.md`.

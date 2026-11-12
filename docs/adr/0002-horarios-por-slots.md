@@ -25,4 +25,7 @@ Opção 3.
 - Editar a grade não altera reservas passadas nem futuras já feitas; elas mantêm o horário em que foram criadas.
   Se o admin mudar um horário, reservas antigas podem não coincidir com a nova grade; isso é aceitável e visível.
 - Aulas com reserva não podem ser excluídas (FK RESTRICT → `409 HORARIO_EM_USO`); o admin as desativa.
+  Só a primeira e a última aula do bloco são referenciadas por FK (`horario_inicio_id`/`horario_fim_id`):
+  a aula do meio de um bloco de 3+ aulas pode ser excluída sem afetar a reserva, que guarda `inicio`/`fim`
+  (confirmado na triagem do ticket 29).
 - Blocos que atravessam turnos não são suportados na v1.

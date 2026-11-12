@@ -12,7 +12,7 @@ Pydantic v2, Alembic, PostgreSQL. Precisamos que qualquer membro suba tudo com u
 - `docker-compose.yml` com três serviços:
   - `db`: `postgres:16`, volume nomeado `pgdata`, healthcheck `pg_isready`.
   - `backend`: build de `backend/Dockerfile`, porta 8000, sobe só depois do `db` saudável; ao iniciar roda
-    `alembic upgrade head`, o seed idempotente e `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+    `alembic upgrade head`, o seed idempotente (política no ADR-0006) e `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
     Volume nomeado `uploads` montado em `/app/uploads` (fotos).
   - `frontend`: build de `frontend/Dockerfile`, servidor de desenvolvimento do Vite em `0.0.0.0:5173`.
 - Configuração só por variáveis de ambiente (`.env`, modelo em `.env.example`); nenhum segredo no repositório.
