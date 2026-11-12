@@ -3,8 +3,12 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Valores de exemplo do `.env.example`: públicos, nunca podem valer em execução (ticket 25/36).
+JWT_SECRET_EXEMPLO = "troque-por-um-segredo-longo-e-aleatorio"
+ADMIN_SENHA_EXEMPLO = "troque-esta-senha-admin"
 
 # Procura `.env` na pasta atual e na raiz do repositório (ao rodar de dentro de backend/).
 _ARQUIVOS_ENV = (".env", "../.env")
@@ -30,6 +34,16 @@ class Config(ConfigBanco):
     ADMIN_RM: str | None = None
     ADMIN_SENHA: str | None = None
     ADMIN_NOME: str = "Administrador"
+
+    @field_validator("JWT_SECRET")
+    @classmethod
+    def _segredo_nao_e_o_de_exemplo(cls, valor: str) -> str:
+        if valor.strip() == JWT_SECRET_EXEMPLO:
+            raise ValueError(
+                "JWT_SECRET ainda é o valor de exemplo do .env.example. Gere um segredo com "
+                "python -c \"import secrets; print(secrets.token_urlsafe(48))\" e coloque no .env."
+            )
+        return valor
 
     @property
     def cors_origens(self) -> list[str]:

@@ -15,7 +15,7 @@ from datetime import date, time, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import obter_config
+from app.core.config import ADMIN_SENHA_EXEMPLO, obter_config
 from app.core.db import SessionLocal
 from app.core.seguranca import hash_senha
 from app.core.tempo import hoje
@@ -65,6 +65,12 @@ def seed_admin(db: Session) -> None:
         log.warning("ADMIN_RM/ADMIN_SENHA não definidos: admin inicial não criado.")
         return
     if db.scalar(select(Professor.id).where(Professor.rm == config.ADMIN_RM)) is not None:
+        return
+    if config.ADMIN_SENHA == ADMIN_SENHA_EXEMPLO:
+        log.error(
+            "ADMIN_SENHA ainda é o valor de exemplo do .env.example: admin inicial NÃO criado. "
+            "Defina uma senha própria no .env e rode o seed de novo."
+        )
         return
     if len(config.ADMIN_SENHA) < 8:
         log.warning("ADMIN_SENHA com menos de 8 caracteres: troque-a após o primeiro login.")

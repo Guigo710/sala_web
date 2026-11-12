@@ -56,3 +56,17 @@ npm run lint
 npm test
 npm run build
 ```
+
+## E2E (Playwright, contra o sistema real)
+
+Com a API (migrations + seed) e o frontend no ar, em `frontend/`:
+
+```
+npx playwright test          # ou: npm run e2e
+```
+
+Variáveis (todas opcionais): `E2E_BASE_URL` (padrão `http://localhost:5173`), `E2E_API_URL` (`http://localhost:8000`),
+`E2E_ADMIN_RM` / `E2E_ADMIN_SENHA` (admin do seed; caem em `ADMIN_RM` / `ADMIN_SENHA`), `E2E_SCREENSHOTS`
+(pasta das capturas do fluxo; padrão `test-results/telas`). Os testes ficam em `e2e/` e criam um ambiente e
+professores com nomes únicos, então podem rodar várias vezes no mesmo banco. No CI (`.github/workflows/ci.yml`)
+rodam contra o build de produção (`vite preview`). Primeira vez fora do CI: `npx playwright install chromium`.

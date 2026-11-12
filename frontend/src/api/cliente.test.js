@@ -64,3 +64,49 @@ describe('requisitar', () => {
     expect(await requisitar('DELETE', '/salas/1')).toBeNull();
   });
 });
+
+describe('requisitar: casos extras (Sentinela)', () => {
+  it('sem token não envia Authorization; corpo JSON com Content-Type', async () => {
+    const fetchFalso = vi.fn().mockResolvedValue(resposta(201, { id: 1 }));
+    definirTransporte(fetchFalso);
+    await requisitar('POST', '/reservas', { corpo: { sala_id: 3 } });
+    const [url, init] = fetchFalso.mock.calls[0];
+    expect(url).toMatch(/\/reservas$/);
+    expect(init.headers.Authorization).toBeUndefined();
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(init.body)).toEqual({ sala_id: 3 });
+  });
+
+  it('422 VALIDACAO traz a lista `erros`', async () => {
+    definirTransporte(() =>
+      Promise.resolve(
+        resposta(422, {
+          detail: 'Dados inválidos: body.capacidade deve ser maior que 0.',
+          codigo: 'VALIDACAO',
+          erros: [{ campo: 'body.capacidade', mensagem: 'deve ser maior que 0' }],
+        }),
+      ),
+    );
+    const erro = await requisitar('POST', '/salas', { corpo: {} }).catch((e) => e);
+    expect(erro).toMatchObject({ status: 422, codigo: 'VALIDACAO', erros: [{ campo: 'body.capacidade' }], conflitos: null });
+  });
+
+  it('falha de rede vira SEM_CONEXAO; corpo não-JSON usa mensagem padrão', async () => {
+    definirTransporte(() => Promise.reject(new TypeError('Failed to fetch')));
+    await expect(requisitar('GET', '/salas')).rejects.toMatchObject({ status: 0, codigo: 'SEM_CONEXAO' });
+    definirTransporte(() => Promise.resolve(new Response('<html>Bad Gateway</html>', { status: 502 })));
+    await expect(requisitar('GET', '/salas')).rejects.toMatchObject({
+      status: 502,
+      codigo: 'ERRO_INTERNO',
+      detail: 'Erro interno do servidor. Tente novamente mais tarde.',
+    });
+  });
+
+  it('401 sem token enviado (visitante) não dispara o fim de sessão', async () => {
+    const aoExpirar = vi.fn();
+    aoSessaoExpirada(aoExpirar);
+    definirTransporte(() => Promise.resolve(resposta(401, { detail: 'x', codigo: 'NAO_AUTENTICADO' })));
+    await expect(requisitar('GET', '/reservas/minhas')).rejects.toBeInstanceOf(ErroApi);
+    expect(aoExpirar).not.toHaveBeenCalled();
+  });
+});
