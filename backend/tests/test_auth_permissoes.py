@@ -211,9 +211,12 @@ def test_rate_limit_de_login(client, novo_professor):
     assert (r.status_code, r.json()["codigo"]) == (429, "MUITAS_TENTATIVAS")
     # outro RM no mesmo IP continua entrando (antes, o IP inteiro ficava bloqueado)
     assert client.post("/auth/login", json={"rm": "vizinho1", "senha": "senhaViz1"}).status_code == 200
-    # teto por IP: 20 falhas no total (5 acima + 15 de RMs variados) bloqueiam qualquer RM neste IP
-    for i in range(15):
+    # teto por IP: 20 falhas no total (13 acima + 7 de RMs variados) bloqueiam qualquer RM neste IP;
+    # o sucesso do admin zerou só o par, não as falhas do IP
+    for i in range(6):
         assert client.post("/auth/login", json={"rm": f"x{i % 3}", "senha": "errada"}).status_code == 401
+    assert client.post("/auth/login", json={"rm": "vizinho1", "senha": "senhaViz1"}).status_code == 200  # 19 falhas
+    assert client.post("/auth/login", json={"rm": "x9", "senha": "errada"}).status_code == 401  # 20ª
     r = client.post("/auth/login", json={"rm": "vizinho1", "senha": "senhaViz1"})
     assert (r.status_code, r.json()["codigo"]) == (429, "MUITAS_TENTATIVAS")
     # o bloqueio é do IP: outro IP entra normalmente

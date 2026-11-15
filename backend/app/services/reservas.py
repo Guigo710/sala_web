@@ -1,5 +1,7 @@
 """Reservas: criação avulsa, conflitos (service + constraint), consultas e cancelamento (RN03–RN08)."""
 
+import calendar
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, time
@@ -13,6 +15,7 @@ from app.core.tempo import agora, agora_tz, momento
 from app.models import GrupoRecorrencia, HorarioAula, Professor, Reserva, Sala
 from app.services import apresentacao
 from app.services.aulas import validar_bloco
+from app.services.comum import obter_ou_404
 
 CONSTRAINT_CONFLITO = "ex_reservas_sem_sobreposicao"
 
@@ -140,6 +143,50 @@ def criar_avulsa(
 
 
 # ---------------------------------------------------------------- consultas
+MAX_DIAS_INTERVALO = 62
+
+
+def _intervalo_invalido(detail: str) -> ErroApi:
+    return ErroApi(422, "INTERVALO_INVALIDO", detail)
+
+
+def resolver_intervalo(mes: str | None, data: date | None, de: date | None, ate: date | None) -> tuple[date, date]:
+    """Exatamente um modo: mes | data | de+ate (≤ 62 dias, inclusivos)."""
+    modos = sum([mes is not None, data is not None, de is not None or ate is not None])
+    if modos != 1:
+        raise _intervalo_invalido("Informe exatamente um período: mes, data ou de + ate.")
+    if mes is not None:
+        m = re.fullmatch(r"(\d{4})-(\d{2})", mes)
+        if not m or not 1 <= int(m.group(2)) <= 12:
+            raise _intervalo_invalido("Mês inválido; use AAAA-MM.")
+        ano, num = int(m.group(1)), int(m.group(2))
+        return date(ano, num, 1), date(ano, num, calendar.monthrange(ano, num)[1])
+    if data is not None:
+        return data, data
+    if de is None or ate is None:
+        raise _intervalo_invalido("Informe de e ate juntos.")
+    if ate < de:
+        raise _intervalo_invalido("A data final deve ser igual ou posterior à inicial.")
+    if (ate - de).days + 1 > MAX_DIAS_INTERVALO:
+        raise _intervalo_invalido(f"O período pode ter no máximo {MAX_DIAS_INTERVALO} dias.")
+    return de, ate
+
+
+def agenda(
+    db: Session,
+    mes: str | None,
+    data: date | None,
+    de: date | None,
+    ate: date | None,
+    sala_ids: Sequence[int] | None,
+    professor_id: int | None,
+    status: str,
+) -> list[Reserva]:
+    """`GET /reservas`: resolve o período (§4.10) e lista."""
+    inicio, fim = resolver_intervalo(mes, data, de, ate)
+    return listar_agenda(db, inicio, fim, sala_ids, professor_id, status)
+
+
 def _ordenado_por_sala(stmt):  # noqa: ANN001, ANN202
     return stmt.join(Reserva.sala).options(contains_eager(Reserva.sala))
 
@@ -181,16 +228,11 @@ def listar_minhas(db: Session, usuario: Professor, periodo: str, status: str) ->
 
 
 def obter(db: Session, reserva_id: int) -> Reserva:
-    reserva = db.get(Reserva, reserva_id)
-    if reserva is None:
-        raise nao_encontrado("Reserva não encontrada.")
-    return reserva
+    return obter_ou_404(db, Reserva, reserva_id, "Reserva não encontrada.")
 
 
 def obter_grupo(db: Session, grupo_id: int, usuario: Professor) -> GrupoRecorrencia:
-    grupo = db.get(GrupoRecorrencia, grupo_id)
-    if grupo is None:
-        raise nao_encontrado("Grupo de recorrência não encontrado.")
+    grupo = obter_ou_404(db, GrupoRecorrencia, grupo_id, "Grupo de recorrência não encontrado.")
     if not usuario.eh_admin and grupo.professor_id != usuario.id:
         raise sem_permissao("Esta reserva recorrente é de outro professor.")
     return grupo
@@ -210,6 +252,12 @@ def reservas_do_grupo(db: Session, grupo_id: int, recarregar: bool = False) -> l
     if recarregar:
         stmt = stmt.execution_options(populate_existing=True)
     return list(db.scalars(stmt).unique())
+
+
+def grupo_com_reservas(db: Session, grupo_id: int, usuario: Professor) -> tuple[GrupoRecorrencia, list[Reserva]]:
+    """Grupo (dono ou admin) e suas ocorrências por data."""
+    grupo = obter_grupo(db, grupo_id, usuario)
+    return grupo, reservas_do_grupo(db, grupo.id)
 
 
 # ---------------------------------------------------------------- cancelamento (RN07)

@@ -1,11 +1,8 @@
-import calendar
-import re
 from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Query, status
 
-from app.core.erros import ErroApi
 from app.core.seguranca import Db, UsuarioAtual, UsuarioOpcional
 from app.schemas import reservas as sr
 from app.services import apresentacao, recorrencia
@@ -13,34 +10,7 @@ from app.services import reservas as servico
 
 router = APIRouter(prefix="/reservas", tags=["reservas"])
 
-MAX_DIAS_INTERVALO = 62
 StatusFiltro = Literal["ativa", "cancelada", "todas"]
-
-
-def _intervalo_invalido(detail: str) -> ErroApi:
-    return ErroApi(422, "INTERVALO_INVALIDO", detail)
-
-
-def resolver_intervalo(mes: str | None, data: date | None, de: date | None, ate: date | None) -> tuple[date, date]:
-    """Exatamente um modo: mes | data | de+ate (≤ 62 dias, inclusivos)."""
-    modos = sum([mes is not None, data is not None, de is not None or ate is not None])
-    if modos != 1:
-        raise _intervalo_invalido("Informe exatamente um período: mes, data ou de + ate.")
-    if mes is not None:
-        m = re.fullmatch(r"(\d{4})-(\d{2})", mes)
-        if not m or not 1 <= int(m.group(2)) <= 12:
-            raise _intervalo_invalido("Mês inválido; use AAAA-MM.")
-        ano, num = int(m.group(1)), int(m.group(2))
-        return date(ano, num, 1), date(ano, num, calendar.monthrange(ano, num)[1])
-    if data is not None:
-        return data, data
-    if de is None or ate is None:
-        raise _intervalo_invalido("Informe de e ate juntos.")
-    if ate < de:
-        raise _intervalo_invalido("A data final deve ser igual ou posterior à inicial.")
-    if (ate - de).days + 1 > MAX_DIAS_INTERVALO:
-        raise _intervalo_invalido(f"O período pode ter no máximo {MAX_DIAS_INTERVALO} dias.")
-    return de, ate
 
 
 @router.get("", response_model=list[sr.Reserva], summary="Agenda (período obrigatório)")
@@ -55,8 +25,7 @@ def agenda(
     professor_id: int | None = None,
     status_: Annotated[StatusFiltro, Query(alias="status")] = "ativa",
 ) -> list[sr.Reserva]:
-    inicio, fim = resolver_intervalo(mes, data, de, ate)
-    lista = servico.listar_agenda(db, inicio, fim, sala_id, professor_id, status_)
+    lista = servico.agenda(db, mes, data, de, ate, sala_id, professor_id, status_)
     return apresentacao.reservas(lista, usuario)
 
 
@@ -98,10 +67,10 @@ def confirmar(entrada: sr.RecorrenteEntrada, db: Db, usuario: UsuarioAtual) -> s
 
 @router.get("/grupos/{grupo_id}", response_model=sr.GrupoComReservas)
 def obter_grupo(grupo_id: int, db: Db, usuario: UsuarioAtual) -> sr.GrupoComReservas:
-    grupo = servico.obter_grupo(db, grupo_id, usuario)
+    grupo, reservas = servico.grupo_com_reservas(db, grupo_id, usuario)
     return sr.GrupoComReservas(
         grupo=apresentacao.grupo(db, grupo),
-        reservas=apresentacao.reservas(servico.reservas_do_grupo(db, grupo.id), usuario),
+        reservas=apresentacao.reservas(reservas, usuario),
     )
 
 

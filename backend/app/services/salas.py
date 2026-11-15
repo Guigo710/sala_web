@@ -1,15 +1,15 @@
-"""Ambientes: consulta com filtros, disponibilidade, exclusão (RN01)."""
+"""Ambientes: consulta com filtros, disponibilidade, cadastro, associações e exclusão (RN01)."""
 
 from collections.abc import Sequence
 from datetime import date
 
-from sqlalchemy import SmallInteger, any_, exists, func, literal, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import SmallInteger, any_, delete, exists, insert, literal, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.erros import ErroApi, nao_encontrado
+from app.core.erros import ErroApi, erro_validacao, nao_encontrado
 from app.core.tempo import agora, momento
 from app.models import (
+    Equipamento,
     FotoSala,
     GrupoRecorrencia,
     HorarioAula,
@@ -17,18 +17,17 @@ from app.models import (
     Reserva,
     Sala,
     SalaEquipamento,
+    Software,
     sala_softwares,
 )
 from app.schemas import reservas as sr
+from app.schemas import salas as ss
 from app.schemas.comum import HorarioAula as HorarioSaida
 from app.services import apresentacao, arquivos
 from app.services.aulas import ordem_turno_sql, validar_bloco
+from app.services.comum import commit_traduzindo, escapar_like
 
 _CARREGAR = (selectinload(Sala.equipamentos), selectinload(Sala.fotos), selectinload(Sala.softwares))
-
-
-def escapar_like(texto: str) -> str:
-    return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def obter_sala(db: Session, sala_id: int, usuario: Professor | None) -> Sala:
@@ -59,6 +58,10 @@ def listar(
     horario_ids: Sequence[int] | None = None,
     incluir_inativas: bool = False,
 ) -> list[Sala]:
+    if data is not None and not horario_ids:
+        raise erro_validacao("query.horario_ids", "informe as aulas junto com a data")
+    if horario_ids and data is None:
+        raise erro_validacao("query.data", "informe a data junto com as aulas")
     stmt = select(Sala).options(selectinload(Sala.equipamentos), selectinload(Sala.fotos))
     if not (incluir_inativas and usuario is not None and usuario.eh_admin):
         stmt = stmt.where(Sala.ativo.is_(True))
@@ -97,7 +100,9 @@ def listar(
     return list(db.scalars(stmt.order_by(Sala.nome)).unique())
 
 
-def disponibilidade(db: Session, sala: Sala, data: date) -> sr.Disponibilidade:
+def disponibilidade(db: Session, sala_id: int, usuario: Professor | None, data: date) -> sr.Disponibilidade:
+    """Aulas do dia (ativas, que valem no dia da semana) com ocupação e `passou` (contrato §4.3)."""
+    sala = obter_sala(db, sala_id, usuario)
     dia = data.isoweekday()
     aulas = db.scalars(
         select(HorarioAula)
@@ -133,7 +138,90 @@ def disponibilidade(db: Session, sala: Sala, data: date) -> sr.Disponibilidade:
     return sr.Disponibilidade(sala_id=sala.id, data=data, dia_semana=dia, aulas=itens)
 
 
-def excluir(db: Session, sala: Sala) -> None:
+def _duplicado() -> ErroApi:
+    return ErroApi(409, "NOME_DUPLICADO", "Já existe um ambiente com este nome.")
+
+
+def _erro_com_reservas() -> ErroApi:
+    return ErroApi(
+        409,
+        "SALA_COM_RESERVAS",
+        "Este ambiente tem reservas e não pode ser excluído. Desative-o (ativo = false).",
+    )
+
+
+def _checar_nome(db: Session, nome: str, ignorar_id: int | None = None) -> None:
+    stmt = select(Sala.id).where(Sala.nome == nome)
+    if ignorar_id is not None:
+        stmt = stmt.where(Sala.id != ignorar_id)
+    if db.scalar(stmt) is not None:
+        raise _duplicado()
+
+
+def _commit_nome(db: Session) -> None:
+    commit_traduzindo(db, {"salas_nome_key": _duplicado()})
+
+
+def criar(db: Session, entrada: ss.SalaEntrada) -> Sala:
+    _checar_nome(db, entrada.nome)
+    sala = Sala(**entrada.model_dump())
+    db.add(sala)
+    _commit_nome(db)
+    return recarregar(db, sala.id)
+
+
+def atualizar(db: Session, sala_id: int, entrada: ss.SalaAtualizar, admin: Professor) -> Sala:
+    sala = obter_sala(db, sala_id, admin)
+    _checar_nome(db, entrada.nome, ignorar_id=sala.id)
+    for campo, valor in entrada.model_dump().items():
+        setattr(sala, campo, valor)
+    _commit_nome(db)
+    return recarregar(db, sala.id)
+
+
+def definir_equipamentos(
+    db: Session, sala_id: int, itens: Sequence[ss.SalaEquipamentoEntrada], admin: Professor
+) -> Sala:
+    """Substitui a lista inteira de equipamentos da sala."""
+    sala = obter_sala(db, sala_id, admin)
+    ids = [i.equipamento_id for i in itens]
+    if len(set(ids)) != len(ids):
+        raise erro_validacao("body", "equipamento repetido na lista")
+    existentes = set(db.scalars(select(Equipamento.id).where(Equipamento.id.in_(ids)))) if ids else set()
+    if len(existentes) != len(set(ids)):
+        raise nao_encontrado("Equipamento não encontrado.")
+    db.execute(delete(SalaEquipamento).where(SalaEquipamento.sala_id == sala.id))
+    for i in itens:
+        db.add(
+            SalaEquipamento(
+                sala_id=sala.id,
+                equipamento_id=i.equipamento_id,
+                quantidade=i.quantidade,
+                especificacao=i.especificacao,
+            )
+        )
+    # Corrida: equipamento excluído entre a checagem e o commit.
+    commit_traduzindo(db, {"sala_equipamentos_equipamento_id_fkey": nao_encontrado("Equipamento não encontrado.")})
+    return recarregar(db, sala.id)
+
+
+def definir_softwares(db: Session, sala_id: int, software_ids: Sequence[int], admin: Professor) -> Sala:
+    """Substitui a lista inteira de softwares da sala (ids repetidos são ignorados)."""
+    sala = obter_sala(db, sala_id, admin)
+    ids = list(dict.fromkeys(software_ids))
+    existentes = set(db.scalars(select(Software.id).where(Software.id.in_(ids)))) if ids else set()
+    if len(existentes) != len(ids):
+        raise nao_encontrado("Software não encontrado.")
+    db.execute(delete(sala_softwares).where(sala_softwares.c.sala_id == sala.id))
+    if ids:
+        db.execute(insert(sala_softwares), [{"sala_id": sala.id, "software_id": i} for i in ids])
+    commit_traduzindo(db, {"sala_softwares_software_id_fkey": nao_encontrado("Software não encontrado.")})
+    return recarregar(db, sala.id)
+
+
+def excluir(db: Session, sala_id: int, admin: Professor) -> None:
+    """Só ambientes sem reservas nem grupos; apaga também as fotos do disco."""
+    sala = obter_sala(db, sala_id, admin)
     tem_reservas = db.scalar(
         select(
             exists().where(Reserva.sala_id == sala.id)
@@ -145,23 +233,9 @@ def excluir(db: Session, sala: Sala) -> None:
     arquivos_fotos = list(db.scalars(select(FotoSala.arquivo).where(FotoSala.sala_id == sala.id)))
     sala_id = sala.id
     db.delete(sala)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise _erro_com_reservas() from None
+    commit_traduzindo(
+        db, {"reservas_sala_id_fkey": _erro_com_reservas(), "grupos_recorrencia_sala_id_fkey": _erro_com_reservas()}
+    )
     for arquivo in arquivos_fotos:
         arquivos.apagar_arquivo(arquivo)
     arquivos.apagar_pasta_sala(sala_id)
-
-
-def _erro_com_reservas() -> ErroApi:
-    return ErroApi(
-        409,
-        "SALA_COM_RESERVAS",
-        "Este ambiente tem reservas e não pode ser excluído. Desative-o (ativo = false).",
-    )
-
-
-def proxima_ordem_foto(db: Session, sala_id: int) -> int:
-    return (db.scalar(select(func.max(FotoSala.ordem)).where(FotoSala.sala_id == sala_id)) or 0) + 1
