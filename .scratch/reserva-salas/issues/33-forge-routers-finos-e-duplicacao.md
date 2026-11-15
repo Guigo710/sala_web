@@ -1,6 +1,6 @@
 # 33: Routers finos e menos duplicação nos CRUDs
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Prioridade: média
@@ -44,10 +44,12 @@ Há também duplicação e um problema de correção:
 - **Sem mudança de comportamento**: o contrato, os status e as mensagens continuam iguais.
 
 ## Critérios de aceite
-- [ ] `grep -nE "db\.(commit|execute|scalar|scalars|add|delete)|select\(" backend/app/routers` não encontra nada.
-- [ ] Nenhum router importa de `sqlalchemy` (exceto tipos, se precisar) nem de outro router.
-- [ ] Um único `obter_ou_404` e um único helper de commit com tradução por nome de constraint.
-- [ ] `IntegrityError` de constraint não mapeada → `500 ERRO_INTERNO` (teste: forçar uma violação de CHECK via monkeypatch).
-- [ ] Os testes do Sentinela (tickets 23 e 24) e os de fumaça passam antes e depois, sem alteração.
+- [x] `grep -nE "db\.(commit|execute|scalar|scalars|add|delete)|select\(" backend/app/routers` não encontra nada.
+- [x] Nenhum router importa de `sqlalchemy` (exceto tipos, se precisar) nem de outro router.
+- [x] Um único `obter_ou_404` e um único helper de commit com tradução por nome de constraint.
+- [x] `IntegrityError` de constraint não mapeada → `500 ERRO_INTERNO` (teste: forçar uma violação de CHECK via monkeypatch).
+- [x] Os testes do Sentinela (tickets 23 e 24) e os de fumaça passam antes e depois, sem alteração.
 
 ## Comments
+
+**Forge (15/11/2026):** feito. Services novos: `equipamentos`, `softwares`, `horarios`, `semestres`, `professores`, `fotos`, `auth`; `salas` completado (criar, atualizar, definir equipamentos/softwares, excluir); `reservas` ganhou `agenda`/`resolver_intervalo` e `grupo_com_reservas`. Helpers únicos em `app/services/comum.py`: `obter_ou_404`, `commit_traduzindo` (constraint desconhecida → relança → `500 ERRO_INTERNO` com log) e `escapar_like`. Routers só declaram rota/dependências, chamam uma função de service e convertem a saída. Na continuação: `apresentacao.grupo` deixou de consultar o banco (os totais vêm das ocorrências já carregadas pelo service) e ganhou `apresentacao.grupo_com_reservas`; os routers não passam mais `db` à camada de apresentação. Testes: `tests/test_routers_finos.py` (grep do critério em cada router via AST, helpers definidos uma vez, `_obter` extinto, CHECK não mapeado → 500, corrida no nome → 409, apresentação sem SQLAlchemy). Testes do Sentinela inalterados, exceto os de rate limit (ticket 31) e os ajustes do 32/41.

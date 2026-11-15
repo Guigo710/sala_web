@@ -2,9 +2,6 @@
 
 from datetime import datetime
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
-
 from app.core.tempo import agora, momento
 from app.models import FotoSala, GrupoRecorrencia, Professor, Reserva, Sala
 from app.schemas import reservas as sr
@@ -115,12 +112,8 @@ def conflito(r: Reserva) -> sr.Conflito:
     )
 
 
-def grupo(db: Session, g: GrupoRecorrencia) -> sr.GrupoRecorrencia:
-    total, ativas = db.execute(
-        select(func.count(Reserva.id), func.count(Reserva.id).filter(Reserva.status == "ativa")).where(
-            Reserva.grupo_recorrencia_id == g.id
-        )
-    ).one()
+def grupo(g: GrupoRecorrencia, ocorrencias: list[Reserva]) -> sr.GrupoRecorrencia:
+    """`ocorrencias`: todas as reservas do grupo, em qualquer status (`reservas.reservas_do_grupo`)."""
     return sr.GrupoRecorrencia(
         id=g.id,
         sala=sala_ref(g.sala),
@@ -130,6 +123,12 @@ def grupo(db: Session, g: GrupoRecorrencia) -> sr.GrupoRecorrencia:
         inicio=g.inicio,
         fim=g.fim,
         criado_em=g.criado_em,
-        total_ocorrencias=total,
-        ocorrencias_ativas=ativas,
+        total_ocorrencias=len(ocorrencias),
+        ocorrencias_ativas=sum(1 for r in ocorrencias if r.status == "ativa"),
     )
+
+
+def grupo_com_reservas(
+    g: GrupoRecorrencia, ocorrencias: list[Reserva], usuario: Professor | None
+) -> sr.GrupoComReservas:
+    return sr.GrupoComReservas(grupo=grupo(g, ocorrencias), reservas=reservas(ocorrencias, usuario))

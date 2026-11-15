@@ -1,6 +1,6 @@
 # 35: Confirmação de recorrência sem um refresh por ocorrência
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Prioridade: baixa
@@ -23,8 +23,10 @@ da v1: nenhum índice novo é pedido.
 - `db.refresh(grupo)` pode continuar (é um só).
 
 ## Critérios de aceite
-- [ ] Confirmar uma recorrência de N datas executa um número de `SELECT`s que **não cresce com N** (teste contando
+- [x] Confirmar uma recorrência de N datas executa um número de `SELECT`s que **não cresce com N** (teste contando
   as consultas com evento `before_cursor_execute` do SQLAlchemy, para N = 2 e N = 15).
-- [ ] Resposta idêntica à de antes (mesmos campos, `reservas` ordenadas por data).
+- [x] Resposta idêntica à de antes (mesmos campos, `reservas` ordenadas por data).
 
 ## Comments
+
+**Forge (15/11/2026):** feito. `recorrencia.confirmar` recarrega as ocorrências com uma consulta (`reservas.reservas_do_grupo(..., recarregar=True)`, ordenadas por data), mantendo só o `db.refresh(grupo)`. Na continuação, a contagem de ocorrências do grupo também saiu do SQL (vem da lista carregada). Teste `test_confirmar_recorrencia_numero_fixo_de_selects` (evento `before_cursor_execute`, N = 2 e N = 15 com o mesmo número de `SELECT`s; resposta idêntica ao `GET /reservas/grupos/{id}`).

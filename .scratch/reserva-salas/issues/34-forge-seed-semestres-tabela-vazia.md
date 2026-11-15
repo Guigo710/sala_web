@@ -1,6 +1,6 @@
 # 34: Seed de semestres só com tabela vazia
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Prioridade: baixa
@@ -22,9 +22,11 @@ O ADR-0006 manda tratar semestres como as outras tabelas de partida.
   consequências do ADR-0006 (tabela esvaziada volta a receber os dados de partida; admin com `ADMIN_RM` excluído é recriado).
 
 ## Critérios de aceite
-- [ ] Banco vazio → seed cria 4 semestres; rodar de novo não cria nada.
-- [ ] Excluir um semestre de partida e rodar o seed → ele **não** volta.
-- [ ] Com um semestre qualquer cadastrado pelo admin → seed não cria nenhum.
-- [ ] Teste do seed cobrindo os três casos.
+- [x] Banco vazio → seed cria 4 semestres; rodar de novo não cria nada.
+- [x] Excluir um semestre de partida e rodar o seed → ele **não** volta.
+- [x] Com um semestre qualquer cadastrado pelo admin → seed não cria nenhum.
+- [x] Teste do seed cobrindo os três casos.
 
 ## Comments
+
+**Forge (15/11/2026):** feito (ADR-0006). `seed_semestres` só roda com a tabela vazia; docstring de `app/seed.py` e "Notas de implementação" do `backend/README.md` atualizadas (tabela esvaziada recebe de novo os dados de partida; admin de `ADMIN_RM` excluído é recriado). Testes em `tests/test_ordens_atlas_rodada3.py`: banco vazio → 4 semestres e nada na segunda vez; semestre excluído não volta; semestre do admin impede o seed.

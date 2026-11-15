@@ -84,3 +84,9 @@ def test_corrida_no_nome_ainda_vira_409(monkeypatch, client, admin):
     monkeypatch.setattr(servico, "_checar_nome", lambda *a, **k: None)
     r = client.post("/salas", headers=admin, json={"nome": "Sala 01", "tipo": "sala", "capacidade": 10})
     assert (r.status_code, r.json()) == (409, {"detail": "Já existe um ambiente com este nome.", "codigo": "NOME_DUPLICADO"})
+
+
+def test_apresentacao_so_converte_sem_consultar_o_banco():
+    """A conversão para o contrato recebe os dados prontos do service; quem consulta é o service."""
+    texto = (PASTA_APP / "services" / "apresentacao.py").read_text(encoding="utf-8")
+    assert "sqlalchemy" not in texto and not re.search(r"\bdb\b", texto)

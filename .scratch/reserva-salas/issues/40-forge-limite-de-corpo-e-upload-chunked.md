@@ -1,6 +1,6 @@
 # 40: Limite de tamanho do corpo para todas as rotas (inclusive upload sem Content-Length)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Sentinela
 Severidade: média
@@ -29,6 +29,10 @@ Não há limite de corpo para nenhuma rota além do upload.
 - Registrar o middleware de forma que a resposta saia com CORS (ver ticket 30).
 
 ## Critérios de aceite
-- [ ] Upload chunked acima do limite → `413 ARQUIVO_GRANDE` sem ler o corpo todo (teste com gerador de 50 MB).
-- [ ] `POST /auth/login` com corpo de 5 MB → `413` (código a definir com o Atlas, ex.: `CORPO_GRANDE`) antes do parse.
-- [ ] Testes de upload do Sentinela (`tests/test_catalogo_upload.py`) continuam passando.
+- [x] Upload chunked acima do limite → `413 ARQUIVO_GRANDE` sem ler o corpo todo (teste com gerador de 50 MB).
+- [x] `POST /auth/login` com corpo de 5 MB → `413` (código a definir com o Atlas, ex.: `CORPO_GRANDE`) antes do parse.
+- [x] Testes de upload do Sentinela (`tests/test_catalogo_upload.py`) continuam passando.
+
+## Comments
+
+**Forge (15/11/2026):** feito. `LimiteCorpo` (ASGI puro, `app/core/middlewares.py`): recusa pelo `Content-Length` e conta os bytes de `receive` (chunked), parando a leitura ao passar do limite. Foto: `UPLOAD_MAX_MB` + 512 KB → `413 ARQUIVO_GRANDE`; demais rotas: 1 MB → `413 CORPO_GRANDE` (registro no contrato pedido no ticket 47, Atlas). Fica por dentro do CORS. Testes em `tests/test_middlewares.py` (gerador de 50 MB, a aplicação lê só os primeiros blocos; login com 5 MB → 413 antes do parse; corpo no limite passa); `test_catalogo_upload.py` segue verde. Conferido com uvicorn real: login chunked de 2 MB → `413 CORPO_GRANDE`.

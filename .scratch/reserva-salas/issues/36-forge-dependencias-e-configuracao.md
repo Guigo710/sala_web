@@ -1,6 +1,6 @@
 # 36: Dependências fixadas e configuração mais segura por padrão
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Prioridade: baixa
@@ -25,9 +25,11 @@ Referências: ADR-0001 (ambiente idêntico para todos), ADR-0004; ticket 25 (Sen
   com mensagem clara. Se o Sentinela já tiver tratado isso no ticket 25, marcar este item como feito lá.
 
 ## Critérios de aceite
-- [ ] `pip install -r requirements.txt` num ambiente limpo instala exatamente as versões listadas.
+- [x] `pip install -r requirements.txt` num ambiente limpo instala exatamente as versões listadas.
 - [ ] A imagem do backend não contém `pytest` (`docker compose run --rm backend pip show pytest` falha).
-- [ ] `pytest` continua rodando com `pip install -r requirements-dev.txt`; `backend/README.md` atualizado.
-- [ ] Com `JWT_SECRET=troque-por-um-segredo-longo-e-aleatorio`, a API não sobe e o erro diz o que fazer.
+- [x] `pytest` continua rodando com `pip install -r requirements-dev.txt`; `backend/README.md` atualizado.
+- [x] Com `JWT_SECRET=troque-por-um-segredo-longo-e-aleatorio`, a API não sobe e o erro diz o que fazer.
 
 ## Comments
+
+**Forge (15/11/2026):** feito. `requirements.in` (faixas, inclui `starlette`) → `requirements.txt` com versões exatas (`==`), sem pytest/httpx; `requirements-dev.txt` com `-r requirements.txt` + dependências de teste; `Dockerfile` instala só o de produção; README e CI usam o dev. `Config` recusa `JWT_SECRET` igual ao do `.env.example` com mensagem de como gerar um (`tests/test_config_seguranca.py`; conferido com uvicorn real). Verificado: `pip install -r requirements.txt` num venv limpo instala exatamente as versões listadas e `pip show pytest` falha. Não verificado: `docker compose run --rm backend pip show pytest`, porque o build da imagem não baixa pacotes neste ambiente (proxy com certificado próprio); o Dockerfile só copia e instala `requirements.txt`.

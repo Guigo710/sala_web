@@ -60,18 +60,13 @@ def previa(entrada: sr.PreviaEntrada, db: Db, usuario: UsuarioAtual) -> sr.Previ
 )
 def confirmar(entrada: sr.RecorrenteEntrada, db: Db, usuario: UsuarioAtual) -> sr.GrupoComReservas:
     grupo, reservas = recorrencia.confirmar(db, usuario, entrada)
-    return sr.GrupoComReservas(
-        grupo=apresentacao.grupo(db, grupo), reservas=apresentacao.reservas(reservas, usuario)
-    )
+    return apresentacao.grupo_com_reservas(grupo, reservas, usuario)
 
 
 @router.get("/grupos/{grupo_id}", response_model=sr.GrupoComReservas)
 def obter_grupo(grupo_id: int, db: Db, usuario: UsuarioAtual) -> sr.GrupoComReservas:
     grupo, reservas = servico.grupo_com_reservas(db, grupo_id, usuario)
-    return sr.GrupoComReservas(
-        grupo=apresentacao.grupo(db, grupo),
-        reservas=apresentacao.reservas(reservas, usuario),
-    )
+    return apresentacao.grupo_com_reservas(grupo, reservas, usuario)
 
 
 @router.post("/grupos/{grupo_id}/cancelar", response_model=sr.CancelarGrupoSaida)

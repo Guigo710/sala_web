@@ -1,6 +1,6 @@
 # 43: Postgres publicado em todas as interfaces com a senha de exemplo
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Sentinela
 Severidade: média
@@ -21,5 +21,9 @@ como superusuário no banco (lê hashes, apaga reservas, cria admin). O backend 
 - Comentar no `.env.example` que a porta só é publicada no localhost.
 
 ## Critérios de aceite
-- [ ] `docker compose up` → `ss -ltn` mostra a 5432 só em `127.0.0.1`.
+- [x] `docker compose up` → `ss -ltn` mostra a 5432 só em `127.0.0.1`.
 - [ ] Backend no Compose continua conectando ao `db`.
+
+## Comments
+
+**Forge (15/11/2026):** feito. `docker-compose.yml` (serviço `db`): `"127.0.0.1:${DB_PORTA_HOST:-5432}:5432"`; comentário no `.env.example`. Opcional também feito: o backend avisa no log quando a `DATABASE_URL` usa a senha de exemplo (aviso, não recusa, para não travar quem já tem o volume criado). Verificado com `docker compose up -d db`: porta publicada como `127.0.0.1:55432->5432/tcp`; um container na rede `sala_web_default` conecta em `db:5432`. O backend em container não foi subido (o build não baixa pacotes neste ambiente); a `DATABASE_URL` dele continua com host `db`.

@@ -1,6 +1,6 @@
 # 41: Tokens antigos continuam válidos depois de trocar ou redefinir a senha
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Sentinela
 Severidade: média
@@ -36,12 +36,16 @@ troca fica ambíguo) e porque o contador também cobre papel e desativação.
 6. Atualizar o `response_model`/status de `PUT /auth/me/senha` no OpenAPI.
 
 ## Critérios de aceite
-- [ ] Migration `0002` sobe e desce (`alembic upgrade head` / `downgrade -1`) num banco com dados; contas existentes ficam com `token_versao = 0`.
-- [ ] Token sem claim `ver` (emitido antes da mudança) → `401 NAO_AUTENTICADO` em `GET /auth/me`; em `GET /reservas` é tratado como visitante (`pode_cancelar = false`).
-- [ ] `PUT /auth/me/senha` com senha atual certa → `200` com `access_token` novo; o token novo funciona em `GET /auth/me`; o token usado na requisição e um segundo token da mesma conta (outro login) → `401`.
-- [ ] `PUT /auth/me/senha` com `SENHA_ATUAL_INCORRETA` ou `VALIDACAO` → `422` e o token atual continua valendo.
-- [ ] `PUT /professores/{id}/senha` pelo admin → `204`; tokens anteriores daquela conta → `401`; login com a nova senha funciona; os tokens de outras contas (inclusive o do admin, quando `{id}` não é ele) seguem valendo.
-- [ ] `PUT /professores/{id}` mudando `papel` → tokens anteriores da conta → `401`. Mudando só `nome`/`email` → tokens seguem valendo.
-- [ ] `PUT /professores/{id}` com `ativo` `true → false` e depois `false → true` → o token antigo continua `401` após a reativação; login novo funciona.
-- [ ] Dois logins da mesma conta convivem (login não incrementa).
-- [ ] Testes automatizados (pytest) para todos os itens acima.
+- [x] Migration `0002` sobe e desce (`alembic upgrade head` / `downgrade -1`) num banco com dados; contas existentes ficam com `token_versao = 0`.
+- [x] Token sem claim `ver` (emitido antes da mudança) → `401 NAO_AUTENTICADO` em `GET /auth/me`; em `GET /reservas` é tratado como visitante (`pode_cancelar = false`).
+- [x] `PUT /auth/me/senha` com senha atual certa → `200` com `access_token` novo; o token novo funciona em `GET /auth/me`; o token usado na requisição e um segundo token da mesma conta (outro login) → `401`.
+- [x] `PUT /auth/me/senha` com `SENHA_ATUAL_INCORRETA` ou `VALIDACAO` → `422` e o token atual continua valendo.
+- [x] `PUT /professores/{id}/senha` pelo admin → `204`; tokens anteriores daquela conta → `401`; login com a nova senha funciona; os tokens de outras contas (inclusive o do admin, quando `{id}` não é ele) seguem valendo.
+- [x] `PUT /professores/{id}` mudando `papel` → tokens anteriores da conta → `401`. Mudando só `nome`/`email` → tokens seguem valendo.
+- [x] `PUT /professores/{id}` com `ativo` `true → false` e depois `false → true` → o token antigo continua `401` após a reativação; login novo funciona.
+- [x] Dois logins da mesma conta convivem (login não incrementa).
+- [x] Testes automatizados (pytest) para todos os itens acima.
+
+## Comments
+
+**Forge (15/11/2026):** feito (ADR-0008, contrato 1.2). Migration `alembic/versions/0002_token_versao.py` (com `downgrade`); `Professor.token_versao` e `revogar_sessoes()` (único ponto de incremento), fora do schema `Usuario`. `criar_token` põe `ver`; a validação exige `sub`, `exp`, `ver` (inteiro) e compara com o banco sem consulta extra. Incrementos: `PUT /auth/me/senha` (agora `200` com o corpo do login e token novo), `PUT /professores/{id}/senha` (`204`), `PUT /professores/{id}` só com mudança de papel ou `ativo` true→false. Testes: `tests/test_revogacao_tokens.py` (19, cobrindo todos os critérios, inclusive migration sobe/desce com dados). Rodado `alembic upgrade head` no banco local `sala_web` (0001 → 0002).

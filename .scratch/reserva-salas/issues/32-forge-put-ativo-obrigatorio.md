@@ -1,6 +1,6 @@
 # 32: `ativo` obrigatório no PUT de salas e horários
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Prioridade: média
@@ -22,10 +22,12 @@ Um `PUT` que esquece `ativo` **reativa** um ambiente ou uma aula desativados. O 
 - Usar os novos schemas nos dois `PUT`. O `POST` não muda (padrão `true`).
 
 ## Critérios de aceite
-- [ ] `PUT /salas/{id}` sem `ativo` → `422 VALIDACAO`, com `erros[0].campo == "body.ativo"`; com `ativo` funciona como antes.
-- [ ] `PUT /horarios/{id}` sem `ativo` → idem.
-- [ ] `POST /salas` e `POST /horarios` sem `ativo` continuam criando com `ativo = true`.
-- [ ] O OpenAPI (`/docs`) mostra `ativo` como obrigatório nos dois `PUT`.
-- [ ] Teste cobrindo os quatro casos.
+- [x] `PUT /salas/{id}` sem `ativo` → `422 VALIDACAO`, com `erros[0].campo == "body.ativo"`; com `ativo` funciona como antes.
+- [x] `PUT /horarios/{id}` sem `ativo` → idem.
+- [x] `POST /salas` e `POST /horarios` sem `ativo` continuam criando com `ativo = true`.
+- [x] O OpenAPI (`/docs`) mostra `ativo` como obrigatório nos dois `PUT`.
+- [x] Teste cobrindo os quatro casos.
 
 ## Comments
+
+**Forge (15/11/2026):** feito. `SalaAtualizar` (`schemas/salas.py`) e `HorarioAtualizar` (`schemas/horarios.py`) herdam do schema de entrada com `ativo: bool` obrigatório; usados nos dois `PUT`. Testes em `tests/test_ordens_atlas_rodada3.py` (PUT sem `ativo` → 422 `body.ativo`, POST sem `ativo` cria ativo, OpenAPI com `ativo` em `required` só no PUT). `ROTAS_ADMIN` de `test_auth_permissoes.py` passou a enviar `ativo` no PUT.

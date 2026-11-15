@@ -1,6 +1,6 @@
 # 44: Cabeçalhos de segurança na API e nos arquivos de /uploads
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Sentinela
 Severidade: baixa
@@ -19,6 +19,10 @@ A API também não envia `X-Frame-Options`/`frame-ancestors` nem `Referrer-Polic
 - Nos arquivos de `/uploads`: também `Content-Disposition: inline` e `Cache-Control` razoável (opcional).
 
 ## Critérios de aceite
-- [ ] `GET /uploads/salas/{id}/{arquivo}.jpg` traz `X-Content-Type-Options: nosniff`.
-- [ ] `GET /salas` traz `X-Content-Type-Options: nosniff` e `X-Frame-Options: DENY`.
-- [ ] Teste automatizado.
+- [x] `GET /uploads/salas/{id}/{arquivo}.jpg` traz `X-Content-Type-Options: nosniff`.
+- [x] `GET /salas` traz `X-Content-Type-Options: nosniff` e `X-Frame-Options: DENY`.
+- [x] Teste automatizado.
+
+## Comments
+
+**Forge (15/11/2026):** feito. `CabecalhosSeguranca` (`app/core/middlewares.py`): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` e `Referrer-Policy: no-referrer` em todas as respostas; em `/uploads` também `Content-Disposition: inline`, `Cache-Control: public, max-age=86400` e `Content-Security-Policy: default-src 'none'; sandbox`. Testes: `test_cabecalhos_de_seguranca_na_api` e `test_cabecalhos_de_seguranca_em_uploads` (`tests/test_middlewares.py`).

@@ -1,6 +1,6 @@
 # 30: Cabeçalhos CORS nas respostas 413 antecipadas e 500
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Prioridade: alta
@@ -29,11 +29,13 @@ Reproduzido com `TestClient` e `Origin: http://localhost:5173`: o `413` (Content
 - Não mudar o envelope nem os códigos.
 
 ## Critérios de aceite
-- [ ] Com `Origin: http://localhost:5173`, estas respostas trazem `access-control-allow-origin: http://localhost:5173`:
+- [x] Com `Origin: http://localhost:5173`, estas respostas trazem `access-control-allow-origin: http://localhost:5173`:
   `413` antecipado (Content-Length acima do limite), `413` lido em blocos, `415`, `401`, `403`, `404`, `405`,
   `409`, `422` e `500` (forçado, ex.: monkeypatch de um service que lança `RuntimeError`).
-- [ ] Com origem não permitida, nenhuma delas traz o cabeçalho.
-- [ ] O `500` continua com `{"detail": "...", "codigo": "ERRO_INTERNO"}`, sem stack trace no corpo e com stack trace no log.
-- [ ] Teste automatizado cobrindo pelo menos o `413` antecipado e o `500` (combinar com o Sentinela, ticket 24).
+- [x] Com origem não permitida, nenhuma delas traz o cabeçalho.
+- [x] O `500` continua com `{"detail": "...", "codigo": "ERRO_INTERNO"}`, sem stack trace no corpo e com stack trace no log.
+- [x] Teste automatizado cobrindo pelo menos o `413` antecipado e o `500` (combinar com o Sentinela, ticket 24).
 
 ## Comments
+
+**Forge (15/11/2026):** feito. `app/core/middlewares.py` (novo, ASGI puro): `ErroInterno` captura exceção inesperada, registra com stack trace no logger `sala_web` e devolve `500 ERRO_INTERNO`; ordem montada em `app/main.py` com o `CORSMiddleware` por último (mais externo), por fora de `CabecalhosSeguranca`, `ErroInterno` e `LimiteCorpo`. O handler de `Exception` em `core/erros.py` segue como última rede. Testes: `tests/test_middlewares.py` (`test_cors_em_todas_as_respostas_de_erro`, `test_sem_cors_para_origem_nao_permitida`: 413 antecipado, 413 em blocos, 415, 401, 403, 404, 405, 409, 422; `test_500_com_cors_envelope_e_stack_trace_so_no_log` com service monkeypatched lançando `RuntimeError`). Conferido também com uvicorn real (`PUT /auth/me/senha` sem token → 401 com CORS).

@@ -4,7 +4,7 @@
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import event, func, select
+from sqlalchemy import event, select
 
 from app.core.db import engine
 from app.core.tempo import hoje
