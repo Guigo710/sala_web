@@ -26,3 +26,5 @@ A API também não envia `X-Frame-Options`/`frame-ancestors` nem `Referrer-Polic
 ## Comments
 
 **Forge (15/11/2026):** feito. `CabecalhosSeguranca` (`app/core/middlewares.py`): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` e `Referrer-Policy: no-referrer` em todas as respostas; em `/uploads` também `Content-Disposition: inline`, `Cache-Control: public, max-age=86400` e `Content-Security-Policy: default-src 'none'; sandbox`. Testes: `test_cabecalhos_de_seguranca_na_api` e `test_cabecalhos_de_seguranca_em_uploads` (`tests/test_middlewares.py`).
+
+**Sentinela (15/11/2026, rodada 3):** verificado e fechado. Uvicorn real: `GET /salas` → `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`; foto recém-enviada em `/uploads/salas/1/<uuid>.jpg` → também `Content-Disposition: inline`, `Content-Security-Policy: default-src 'none'; sandbox` e `Cache-Control: public, max-age=86400`. Continua aceito (ADR-0005) que um arquivo só com a assinatura JPEG no começo é aceito; a CSP `sandbox` e o `nosniff` neutralizam o poliglota.

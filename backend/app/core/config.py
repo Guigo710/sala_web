@@ -25,7 +25,8 @@ class ConfigBanco(BaseSettings):
 
 
 class Config(ConfigBanco):
-    JWT_SECRET: str = Field(min_length=16)
+    # HS256 pede chave de pelo menos 32 bytes (RFC 7518 §3.2); o PyJWT avisa abaixo disso.
+    JWT_SECRET: str = Field(min_length=32)
     JWT_EXPIRA_MINUTOS: int = 480
     CORS_ORIGENS: str = "http://localhost:5173"
     UPLOAD_DIR: str = "./uploads"

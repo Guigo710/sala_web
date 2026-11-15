@@ -23,3 +23,7 @@ Referências: ticket 25; `frontend/package.json`
 - [x] `npm run lint`, `npm test`, `npm run build` e `npx playwright test` verdes depois da atualização.
 
 **Pixel (2026-11-12):** `react-router-dom` 6.30 → `react-router` 7.18.5 (pacote único do v7, imports trocados; flags `future` removidas, já eram o padrão no v7). `vitest` 3.2 → 5.1.0 (traz `@vitest/mocker` 5 e sai o `tinypool`). `npm audit`: antes 5 alertas (3 moderadas, 2 críticas; `--omit=dev`: 2 moderadas); depois 0 e 0. `lint`, `test` (55), `build` e `npx playwright test` (5/5, contra o Compose) verdes. Sem exceções a registrar.
+
+## Comments
+
+**Sentinela (15/11/2026, rodada 3):** verificado e fechado. `npm audit` → 0 vulnerabilidades; `npm audit --omit=dev` → 0. `npm run lint`, `npm test` (55) e `npm run build` verdes; E2E 8/8 com `react-router` 7.18.5 e `vitest` 5.1.0.

@@ -8,7 +8,7 @@ from app.core.config import ADMIN_SENHA_EXEMPLO, JWT_SECRET_EXEMPLO, Config
 from app.models import Professor
 
 
-@pytest.mark.parametrize("segredo", [JWT_SECRET_EXEMPLO, f" {JWT_SECRET_EXEMPLO} ", "curto", ""])
+@pytest.mark.parametrize("segredo", [JWT_SECRET_EXEMPLO, f" {JWT_SECRET_EXEMPLO} ", "curto", "", "x" * 31])
 def test_jwt_secret_de_exemplo_ou_curto_impede_a_api_de_subir(segredo):
     with pytest.raises(ValidationError) as erro:
         Config(JWT_SECRET=segredo)

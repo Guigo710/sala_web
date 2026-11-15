@@ -68,7 +68,7 @@ A suíte completa é do Sentinela; os testes de fumaça e os dos tickets do Forg
     tabela estiver **vazia**. Semestres de partida: os dois do ano corrente e os dois do seguinte; depois disso
     o admin cadastra os novos (excluir um semestre de partida não o faz voltar);
   - consequência: se o admin esvaziar uma tabela inteira, o próximo start recoloca os dados de partida dela.
-- `JWT_SECRET` é obrigatório (mínimo 16 caracteres) e não pode ser o valor de exemplo do `.env.example`; a API
+- `JWT_SECRET` é obrigatório (mínimo 32 caracteres) e não pode ser o valor de exemplo do `.env.example`; a API
   não sobe sem um segredo próprio. Se a `DATABASE_URL` usar a senha de exemplo, a API sobe, mas registra um aviso.
 - **Tokens (ADR-0008)**: o JWT leva a claim `ver` = `professores.token_versao`. Trocar/redefinir a senha, mudar o
   papel ou desativar a conta incrementa a versão e derruba todas as sessões dela; `PUT /auth/me/senha` devolve um

@@ -6,3 +6,6 @@ uploads
 tests/__pycache__
 tests
 requirements-dev.txt
+.env
+.env.*
+.ruff_cache

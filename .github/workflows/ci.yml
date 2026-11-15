@@ -80,6 +80,32 @@ jobs:
         env:
           VITE_API_URL: http://localhost:8000
 
+  imagens:
+    name: Imagens Docker (backend + frontend nginx)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build da imagem do backend
+        run: docker build -t sala_web-backend:ci backend
+      - name: Build da imagem do frontend (nginx, ticket 42)
+        run: docker build --build-arg VITE_API_URL=http://localhost:8000 -t sala_web-frontend:ci frontend
+      - name: Fumaça do nginx (SPA, sem código-fonte, cabeçalhos)
+        run: |
+          docker run -d --name web -p 127.0.0.1:8080:80 sala_web-frontend:ci
+          for i in $(seq 20); do curl -sf http://127.0.0.1:8080/ > /dev/null && break; sleep 1; done
+          falhou=0
+          checa() { codigo=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080$1"); echo "$1 -> $codigo (esperado $2)"; [ "$codigo" = "$2" ] || falhou=1; }
+          checa /agenda 200
+          checa /admin/ambientes 200
+          checa /ambientes/3 200
+          checa /src/main.jsx 404
+          checa /.env 404
+          curl -sI http://127.0.0.1:8080/agenda | grep -qi '^x-content-type-options: nosniff' || { echo "sem nosniff"; falhou=1; }
+          curl -sI http://127.0.0.1:8080/agenda | grep -qi '^x-frame-options: deny' || { echo "sem X-Frame-Options"; falhou=1; }
+          docker logs web
+          exit $falhou
+
   e2e:
     name: E2E (Playwright, sistema real)
     runs-on: ubuntu-latest
