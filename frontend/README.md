@@ -11,7 +11,7 @@ Stack: React 18, Vite 6, react-router 7 (modo biblioteca, pacote `react-router`)
 ```
 frontend/
 ├── Dockerfile                # multi-stage: node:22-alpine (npm ci + vite build) → nginx:1.28-alpine
-├── nginx.conf                # serve dist/, fallback de SPA para index.html, 404 para arquivo inexistente
+├── nginx.conf                # template: serve dist/, fallback de SPA, 404 para arquivo inexistente, CSP (ticket 52)
 ├── package.json              # scripts: dev, dev:mock, build, lint, test
 ├── vite.config.js            # dev server em localhost:5173, preview em 0.0.0.0:5173 + config do Vitest
 ├── eslint.config.js
@@ -51,6 +51,11 @@ frontend/
   - As variáveis `VITE_*` valem **no build** (o Vite as grava no JavaScript): o Compose as passa como build args.
     Mudou `VITE_API_URL` ou `VITE_UPLOAD_MAX_MB` no `.env`? Rode `docker compose up --build` de novo; só reiniciar
     o contêiner não basta.
+  - CSP (ticket 52): o Dockerfile passa o `nginx.conf` pelo `envsubst` e troca `${API_ORIGIN}` pela origem do
+    `VITE_API_URL` (`connect-src`/`img-src`, cobre as fotos de `/uploads`); URL fora de `http(s)://host[:porta][/caminho]`
+    derruba o build. Sem `'unsafe-inline'`: o `<style>` que o FullCalendar injeta usa o nonce de
+    `<meta name="csp-nonce">` do `index.html`, que o nginx troca a cada resposta (`$request_id`). O
+    `e2e/csp.spec.js` confere tudo contra a imagem (`E2E_EXIGIR_CSP=1`); no `vite preview`, sem CSP, ele é pulado.
   - Sem hot reload no Docker: para desenvolver, use o modo local abaixo (pode deixar `db` e `backend` no Docker).
 - **Local** (desenvolvimento): em `frontend/`, `npm install && npm run dev` → http://localhost:5173, com hot reload.
   `VITE_API_URL` padrão `http://localhost:8000`. O dev server é só para a sua máquina de desenvolvimento.

@@ -103,6 +103,17 @@ jobs:
           checa /.env 404
           curl -sI http://127.0.0.1:8080/agenda | grep -qi '^x-content-type-options: nosniff' || { echo "sem nosniff"; falhou=1; }
           curl -sI http://127.0.0.1:8080/agenda | grep -qi '^x-frame-options: deny' || { echo "sem X-Frame-Options"; falhou=1; }
+          # CSP (ticket 52): origem da API do build arg, sem 'unsafe-inline', e o nonce do cabeçalho igual ao do HTML.
+          resp=$(curl -si http://127.0.0.1:8080/agenda | tr -d '\r')
+          csp=$(printf '%s\n' "$resp" | grep -i '^content-security-policy:' || true)
+          echo "$csp"
+          echo "$csp" | grep -q "connect-src 'self' http://localhost:8000;" || { echo "CSP sem a API em connect-src"; falhou=1; }
+          echo "$csp" | grep -q "img-src 'self' http://localhost:8000;" || { echo "CSP sem a API em img-src"; falhou=1; }
+          echo "$csp" | grep -q "frame-ancestors 'none'" || { echo "CSP sem frame-ancestors"; falhou=1; }
+          if echo "$csp" | grep -q "unsafe-inline\|unsafe-eval"; then echo "CSP com unsafe-*"; falhou=1; fi
+          nonce_cab=$(echo "$csp" | grep -o "'nonce-[0-9a-f]*'" | sed "s/'nonce-\(.*\)'/\1/")
+          nonce_html=$(printf '%s\n' "$resp" | grep -o 'name="csp-nonce" content="[0-9a-f]*"' | sed 's/.*content="\(.*\)"/\1/')
+          { [ -n "$nonce_cab" ] && [ "$nonce_cab" = "$nonce_html" ]; } || { echo "nonce do cabeçalho ($nonce_cab) != do HTML ($nonce_html)"; falhou=1; }
           docker logs web
           exit $falhou
 

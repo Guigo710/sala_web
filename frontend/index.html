@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Nonce da CSP para o <style> que o FullCalendar injeta: o nginx troca o marcador a cada resposta (ticket 52). -->
+    <meta name="csp-nonce" content="__CSP_NONCE__" />
     <meta name="description" content="Consulta e reserva de salas e laboratórios da FATEC Indaiatuba." />
     <title>Reserva de salas</title>
   </head>
