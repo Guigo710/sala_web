@@ -13,8 +13,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
+# Usuário sem privilégios (ticket 51), com uid/gid fixos: o serviço "uploads-permissoes" do Compose usa o número.
+# O código fica com root (só leitura para "app"); só /app/uploads é dele. Um volume nomeado novo
+# herda o dono desta pasta; um volume antigo, criado por root, é corrigido pelo "uploads-permissoes".
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin app
+
 COPY . .
-RUN mkdir -p /app/uploads
+RUN mkdir -p /app/uploads && chown app:app /app/uploads
+
+USER 10001:10001
 
 EXPOSE 8000
 

@@ -36,7 +36,7 @@ from sqlalchemy import text  # noqa: E402
 
 from alembic import command  # noqa: E402
 from app.core.db import SessionLocal, engine  # noqa: E402
-from app.core.seguranca import limite_login  # noqa: E402
+from app.core.seguranca import limite_login, limite_troca_senha  # noqa: E402
 from app.core.tempo import hoje  # noqa: E402
 from app.main import app  # noqa: E402
 from app.seed import executar as executar_seed  # noqa: E402
@@ -64,6 +64,7 @@ def banco_limpo(esquema):
     with SessionLocal() as db:
         executar_seed(db)
     limite_login.limpar()
+    limite_troca_senha.limpar()
     yield
 
 

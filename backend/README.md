@@ -77,6 +77,14 @@ A suíte completa é do Sentinela; os testes de fumaça e os dos tickets do Forg
   20 falhas do IP (qualquer RM) bloqueiam o IP por 5 min. O IP é o da conexão (`request.client.host`); o código
   **não** lê `X-Forwarded-For`. Com proxy reverso na frente, defina `FORWARDED_ALLOW_IPS` com o IP do proxy
   (veja [`.env.example`](../.env.example)); o uvicorn então usa o IP real do cliente. Nunca use `*`.
+- **Limite na troca da própria senha (ticket 50)**, mesmo mecanismo: 5 `senha_atual` erradas da mesma conta em
+  5 min bloqueiam `PUT /auth/me/senha` daquela conta por 5 min (`429 MUITAS_TENTATIVAS`, mesmo envelope do login,
+  mesmo com a senha certa). A chave é o id do professor (vale para qualquer token da conta); acerto zera.
+- **Container sem root (ticket 51)**: a imagem roda como `app` (uid/gid `10001`); o código em `/app` é de root e
+  só `/app/uploads` pertence a `app`. Um volume `uploads` novo já nasce com esse dono. Volumes criados por versões
+  anteriores (como root) são corrigidos sozinhos pelo serviço `uploads-permissoes` do Compose, que roda antes do
+  backend a cada `docker compose up` e só faz `chown` do que não for do uid 10001. Correção manual equivalente,
+  se preciso: `docker compose run --rm --no-deps -u root backend chown -R app:app /app/uploads`.
 - **Middlewares** (`app/core/middlewares.py`): o CORS é o mais externo, então toda resposta, inclusive `413` e
   `500`, leva os cabeçalhos CORS (contrato §1.5). Corpo máximo: 1 MB nas rotas comuns (`413 CORPO_GRANDE`) e
   `UPLOAD_MAX_MB` + folga no upload de foto (`413 ARQUIVO_GRANDE`), com ou sem `Content-Length`. Todas as

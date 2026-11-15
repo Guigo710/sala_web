@@ -225,3 +225,55 @@ class LimiteLogin:
 
 
 limite_login = LimiteLogin()
+
+
+# ---------------------------------------------------------------- limite na troca da própria senha (ticket 50)
+MAX_FALHAS_TROCA = 5  # `senha_atual` errada da mesma conta que bloqueiam a troca
+
+
+class LimiteTrocaSenha:
+    """Falhas de `senha_atual` em `PUT /auth/me/senha`, por conta (chave `("troca", professor_id)`).
+
+    Mesmo mecanismo do login (ADR-0007): em memória, por processo, janela de 5 min e bloqueio de 5 min.
+    `relogio` (segundos, monotônico) pode ser trocado nos testes.
+    """
+
+    def __init__(
+        self,
+        max_falhas: int = MAX_FALHAS_TROCA,
+        janela_s: float = JANELA_S,
+        bloqueio_s: float = BLOQUEIO_S,
+        relogio: Callable[[], float] = _time.monotonic,
+    ) -> None:
+        self.relogio = relogio
+        self._conta = _Contador(max_falhas, janela_s, bloqueio_s)
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _chave(professor_id: int) -> tuple[str, int]:
+        return ("troca", professor_id)
+
+    def bloqueado(self, professor_id: int) -> bool:
+        with self._lock:
+            return self._conta.bloqueado(self._chave(professor_id), self.relogio())
+
+    def registrar_falha(self, professor_id: int) -> None:
+        agora_s = self.relogio()
+        with self._lock:
+            self._conta.descartar_vencidos(agora_s)
+            self._conta.registrar_falha(self._chave(professor_id), agora_s)
+
+    def registrar_sucesso(self, professor_id: int) -> None:
+        with self._lock:
+            self._conta.zerar(self._chave(professor_id))
+
+    def tamanho(self) -> int:
+        with self._lock:
+            return len(self._conta.falhas) + len(self._conta.bloqueado_ate)
+
+    def limpar(self) -> None:
+        with self._lock:
+            self._conta.limpar()
+
+
+limite_troca_senha = LimiteTrocaSenha()

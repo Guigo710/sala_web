@@ -1,6 +1,6 @@
 # 50: Sem limite de tentativas na senha atual de `PUT /auth/me/senha`
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Sentinela
 Severidade: baixa
@@ -30,6 +30,16 @@ senhas fracas, mas não há nada que freie o ataque.
 - Acerto zera o contador. Atlas registra o `429` em §4.2 do contrato.
 
 ## Critérios de aceite
-- [ ] 5 `senha_atual` erradas seguidas → a 6ª tentativa (mesmo certa) → `429 MUITAS_TENTATIVAS`.
-- [ ] Outra conta não é afetada; o limite vence depois da janela.
-- [ ] Teste pytest com relógio falso (como em `tests/test_limite_login.py`).
+- [x] 5 `senha_atual` erradas seguidas → a 6ª tentativa (mesmo certa) → `429 MUITAS_TENTATIVAS`.
+- [x] Outra conta não é afetada; o limite vence depois da janela.
+- [x] Teste pytest com relógio falso (como em `tests/test_limite_login.py`).
+
+## Resolução (Forge, rodada 4)
+- `app/core/seguranca.py`: `LimiteTrocaSenha` (reaproveita `_Contador` do ADR-0007, chave `("troca", professor.id)`,
+  `MAX_FALHAS_TROCA = 5`, janela e bloqueio de 5 min, relógio trocável) e a instância `limite_troca_senha`.
+- `app/services/auth.py` (`trocar_senha`): bloqueado → `429 MUITAS_TENTATIVAS` antes de conferir a senha, com o mesmo
+  envelope (`{"detail", "codigo"}`) do login; `SENHA_ATUAL_INCORRETA` registra falha; acerto zera.
+- Não revoga as sessões ao estourar (opção "mais forte" fica para decisão do Atlas, ticket 53).
+- Testes: `tests/test_limite_troca_senha.py` (10, relógio falso); `conftest.py` limpa o contador entre testes.
+- Conferido também contra o container: 5 × `422`, depois `429` mesmo com a senha certa.
+- Contrato §4.2 ainda não lista o `429` desta rota: ticket 53 (Atlas).
