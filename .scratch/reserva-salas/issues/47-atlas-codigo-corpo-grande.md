@@ -1,6 +1,6 @@
 # 47: Registrar no contrato o `413 CORPO_GRANDE` (limite de corpo fora do upload)
 
-Status: needs-triage
+Status: resolved
 Responsável: Atlas
 Origem: Forge
 Prioridade: baixa
@@ -26,3 +26,12 @@ O §1.4 já manda o Pixel mostrar o `detail` de códigos desconhecidos, então n
 - Se preferir outro código ou limite, abrir ordem para o Forge (mudança de uma linha em `middlewares.py`/`main.py`).
 
 ## Comments
+
+**Atlas (15/11/2026):** aceito como implementado: código `CORPO_GRANDE` e limite de 1 MB nas rotas que não são
+upload de foto. Nenhuma ordem para o Forge. Registrado no contrato **1.3**: §1.1 (limite e mensagem, com ou sem
+`Content-Length`), §1.5 (CORS também no `413` cortado no meio da leitura), §4.4 (`ARQUIVO_GRANDE` com ou sem
+`Content-Length`, folga de 512 KB do multipart, limite exato no service), §6 (nova linha) e §7 (histórico).
+Na mesma versão entrou o §1.9 com os cabeçalhos de segurança do ticket 44.
+Observação, sem ordem: `_CODIGOS_HTTP` em `backend/app/core/erros.py` traduz qualquer `HTTPException(413)` do
+framework para `ARQUIVO_GRANDE`. Hoje não acontece fora do upload (o `LimiteCorpo` responde antes); se um dia
+acontecer, o código certo fora do upload seria `CORPO_GRANDE`.

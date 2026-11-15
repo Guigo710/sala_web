@@ -2,7 +2,7 @@
 
 Responsável: Atlas. **Forge implementa e Pixel consome exatamente este documento.**
 Mudanças no contrato só via ticket `Responsável: Atlas`. Regras de negócio detalhadas: `.scratch/reserva-salas/spec.md`.
-Versão: **1.2** (2026-11-12). O que mudou desde a 1.0 está no §7 (Histórico).
+Versão: **1.3** (2026-11-15). O que mudou desde a 1.0 está no §7 (Histórico).
 
 Sumário
 1. Convenções gerais
@@ -22,6 +22,10 @@ Sumário
 ### 1.1 Base, formato e nomes
 - Base URL: `http://localhost:8000` (frontend usa `VITE_API_URL`). **Sem prefixo** de versão; rotas **sem barra final** (`/salas`, nunca `/salas/`).
 - Corpo e respostas em JSON UTF-8 (`Content-Type: application/json`), exceto upload de foto (`multipart/form-data`).
+- Tamanho máximo do corpo: **1 MB** em todas as rotas, exceto o upload de foto (§4.4). Acima disso →
+  `413 CORPO_GRANDE` ("A requisição passa do tamanho máximo de 1 MB."), com ou sem `Content-Length`
+  (corpo `chunked` é contado enquanto chega e a leitura para ao passar do limite). O maior corpo legítimo da API
+  tem poucos KB; o Pixel não precisa conferir antes de enviar.
 - Nomes de campos em `snake_case` e em português.
 - IDs são inteiros (`integer`, `serial` no banco).
 - Listas são devolvidas como **array JSON puro**, sem paginação na v1.
@@ -65,8 +69,8 @@ do §6 ser fechada.
 
 ### 1.5 CORS
 Origens permitidas em `CORS_ORIGENS` (separadas por vírgula; padrão `http://localhost:5173`). Métodos `GET, POST, PUT, PATCH, DELETE`; headers `Authorization, Content-Type`.
-**Toda** resposta, inclusive as de erro (`4xx`, `413` recusado antes de ler o corpo, `500`), leva os cabeçalhos
-CORS quando a origem é permitida. Sem eles o navegador esconde o envelope e o frontend só vê "sem conexão".
+**Toda** resposta, inclusive as de erro (`4xx`, `413` recusado pelo `Content-Length` ou no meio da leitura, `500`),
+leva os cabeçalhos CORS quando a origem é permitida. Sem eles o navegador esconde o envelope e o frontend só vê "sem conexão".
 
 ### 1.6 Semântica de `PUT`
 - `PUT` **substitui** o recurso inteiro (campos editáveis). Campo opcional omitido é gravado como `null`.
@@ -91,6 +95,17 @@ CORS quando a origem é permitida. Sem eles o navegador esconde o envelope e o f
 | `rm` na criação de conta | regex `^[A-Za-z0-9]{3,20}$` | `422 VALIDACAO` |
 
 O bcrypt só considera os primeiros 72 bytes da senha (ADR-0004); senhas maiores são aceitas, mas o excedente não conta.
+
+### 1.9 Cabeçalhos de segurança
+Toda resposta da API (JSON, erros e `/uploads`) leva:
+- `X-Content-Type-Options: nosniff`;
+- `X-Frame-Options: DENY`;
+- `Referrer-Policy: no-referrer`.
+
+Arquivos servidos com sucesso em `/uploads/...` levam também `Content-Disposition: inline`,
+`Content-Security-Policy: default-src 'none'; sandbox` e `Cache-Control: public, max-age=86400` (o nome do arquivo
+é um UUID, então o conteúdo de uma URL nunca muda). Nada disso muda o uso pelo frontend: as fotos continuam
+em `<img src>`, que não depende de CSP do arquivo nem de frames.
 
 ---
 
@@ -445,7 +460,7 @@ Erros comuns a toda rota protegida (`401 NAO_AUTENTICADO`, `403 SEM_PERMISSAO`) 
 | Método | Rota | Acesso | Resposta |
 |---|---|---|---|
 | GET | `/saude` | público | `200 {"status": "ok"}` (faz `SELECT 1` no banco; se falhar, `503 {"status": "erro"}`) |
-| GET | `/uploads/{caminho}` | público | arquivo estático de `UPLOAD_DIR` (StaticFiles). |
+| GET | `/uploads/{caminho}` | público | arquivo estático de `UPLOAD_DIR` (StaticFiles), com os cabeçalhos do §1.9. |
 
 ### 4.2 Auth
 
@@ -598,7 +613,10 @@ Formatos aceitos: JPEG, PNG, WebP, conferidos pelo conteúdo (assinatura), não 
 #### `POST /salas/{id}/fotos` (admin)
 `multipart/form-data`: `arquivo` (file, obrigatório), `legenda` (texto ≤ 200, opcional). Uma foto por requisição (Pixel envia várias em sequência).
 `201` → `Foto` com `ordem = (maior ordem da sala) + 1`.
-Erros: `413 ARQUIVO_GRANDE`, `415 TIPO_ARQUIVO_INVALIDO`.
+Erros: `413 ARQUIVO_GRANDE` ("A foto passa do limite de N MB."), `415 TIPO_ARQUIVO_INVALIDO`.
+O `413` vale com ou sem `Content-Length`: a requisição inteira é barrada cedo acima de `UPLOAD_MAX_MB` + 512 KB
+(folga do multipart), sem ler o resto do corpo, e o arquivo é conferido exatamente contra `UPLOAD_MAX_MB` na leitura.
+Esta rota não usa o limite de 1 MB do §1.1.
 
 #### `PATCH /salas/{id}/fotos/{foto_id}` (admin)
 ```json
@@ -885,7 +903,8 @@ Sem nada a cancelar → `200` com `canceladas: 0`. Erros: `403 SEM_PERMISSAO`.
 | 409 | `HORARIO_EM_USO` | Excluir horário referenciado por reserva |
 | 409 | `SEMESTRE_SOBREPOSTO` | Semestres com datas sobrepostas |
 | 409 | `SEMESTRE_EM_USO` | Excluir semestre com grupo de recorrência |
-| 413 | `ARQUIVO_GRANDE` | Foto acima de `UPLOAD_MAX_MB` |
+| 413 | `ARQUIVO_GRANDE` | Foto acima de `UPLOAD_MAX_MB` (só `POST /salas/{id}/fotos`; com ou sem `Content-Length`) |
+| 413 | `CORPO_GRANDE` | Corpo da requisição acima de 1 MB (rotas que não são upload de foto; §1.1) |
 | 415 | `TIPO_ARQUIVO_INVALIDO` | Foto que não é JPEG/PNG/WebP |
 | 422 | `VALIDACAO` | Erro de schema/parâmetro (traz `erros`) |
 | 422 | `DATA_PASSADA` | Início da reserva já passou |
@@ -909,6 +928,15 @@ Respostas `503` só existem em `GET /saude` (corpo `{"status": "erro"}`, fora do
 ---
 
 ## 7. Histórico de mudanças
+
+### 1.3 (2026-11-15): limite de corpo e cabeçalhos de segurança (tickets 40, 44 e 47)
+O backend já se comporta assim (Forge, rodada 3); só passou a estar escrito. Nenhuma mudança de código pedida.
+- Novo código **`413 CORPO_GRANDE`**: corpo acima de 1 MB em qualquer rota que não seja o upload de foto (§1.1, §6;
+  ticket 40, registrado no ticket 47). O Pixel já mostra o `detail` de códigos que não conhece (§1.4).
+- `413 ARQUIVO_GRANDE` também sem `Content-Length` (upload `chunked`), barrado sem ler o corpo todo (§4.4).
+- §1.5: o `413` cortado no meio da leitura também leva CORS.
+- §1.9 (novo): `nosniff`, `X-Frame-Options`, `Referrer-Policy` em toda resposta; CSP, `Content-Disposition` e
+  `Cache-Control` nos arquivos de `/uploads` (ticket 44).
 
 ### 1.2 (2026-11-12): revogação de tokens (ticket 41, ADR-0008)
 Mudanças que **exigem código**:
