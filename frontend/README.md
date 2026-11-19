@@ -12,6 +12,8 @@ Stack: React 18, Vite 6, react-router 7 (modo biblioteca, pacote `react-router`)
 frontend/
 ├── Dockerfile                # multi-stage: node:22-alpine (npm ci + vite build) → nginx:1.28-alpine
 ├── nginx.conf                # template: serve dist/, fallback de SPA, 404 para arquivo inexistente, CSP (ticket 52)
+├── vercel.json               # publicação no Vercel: fallback de SPA, cabeçalhos de segurança, cache de /assets (ticket 65)
+├── vite-plugins/csp-vercel.js # só no build do Vercel (VERCEL=1): <meta> CSP com a origem de VITE_API_URL (ticket 65)
 ├── package.json              # scripts: dev, dev:mock, build, lint, test
 ├── vite.config.js            # dev server em localhost:5173, preview em 0.0.0.0:5173 + config do Vitest
 ├── eslint.config.js
@@ -72,6 +74,55 @@ frontend/
 | `VITE_API_URL` | `http://localhost:8000` | Base da API (sem barra final). |
 | `VITE_UPLOAD_MAX_MB` | `5` (no Compose: `UPLOAD_MAX_MB`) | Limite da foto conferido no navegador antes do upload; deve acompanhar o `UPLOAD_MAX_MB` do backend, que continua sendo a referência (`413`). |
 | `VITE_USE_MOCK` | (vazio) | `true` liga a API simulada, só no `npm run dev`. |
+
+## Publicação no Vercel (ADR-0009, ticket 65)
+
+Passo a passo para o dono: [`../docs/publicacao.md`](../docs/publicacao.md) (seção 4). No projeto do Vercel:
+Root Directory `frontend`, Framework **Vite**, Build Command `npm run build`, Output Directory `dist` e a variável
+`VITE_API_URL` = endereço da API no Render (`https://...onrender.com`, sem barra no fim). Mudou `VITE_API_URL`?
+**Redeploy**: o valor entra no build.
+
+- **`vercel.json`** (lido pelo Vercel na pasta `frontend`):
+  - `rewrites`: caminhos **sem extensão** (`/agenda`, `/ambientes/3`, `/admin/ambientes`) → `/index.html` (rotas do
+    React Router). Arquivo inexistente com extensão (`/src/main.jsx`, `/assets/nao-existe.js`, `/.env`) → 404, como
+    no nginx. No Vercel, arquivo que existe em `dist/` tem prioridade sobre o `rewrite`.
+  - `headers`: `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` e uma CSP fixa com
+    `img-src`/`connect-src 'self' https:` e `frame-ancestors 'none'`; `/assets/*` com cache de 1 ano (`immutable`;
+    os nomes têm hash). O `index.html` fica com o cache padrão do Vercel (revalidado).
+- **Por que a CSP é diferente do nginx**: o Vercel serve arquivos estáticos e não gera um nonce por resposta. Por
+  decisão do ADR-0009, **só no Vercel** `style-src` tem `'unsafe-inline'` (o `<style>` que o FullCalendar injeta);
+  `script-src 'self'` continua estrito, sem `'unsafe-inline'` nem `'unsafe-eval'`. Nonce fixo ou hash foram
+  rejeitados (ADR-0009); com nonce ou hash presentes o navegador ignoraria o `'unsafe-inline'`.
+- **Origem da API na CSP**: a URL do Render não cabe no `vercel.json` (só existe depois de criado o serviço). O
+  plugin `vite-plugins/csp-vercel.js` age só quando `VERCEL` está definido (o Vercel define `VERCEL=1` no build):
+  calcula a origem de `VITE_API_URL` (mesma regra do Dockerfile; fora de `http(s)://host[:porta][/caminho]`, ou
+  vazia, **o build falha** com mensagem clara), grava como primeiro elemento do `<head>` uma
+  `<meta http-equiv="Content-Security-Policy">` com `img-src`/`connect-src 'self' <origem da API>` e tira a
+  `<meta name="csp-nonce">`. O navegador aplica cabeçalho e meta juntos: vale o que as duas permitem.
+- Fora do Vercel (`npm run build`, Dockerfile, Compose) o `index.html` sai igual ao de antes, com o nonce do nginx.
+- Conferir localmente: `VERCEL=1 VITE_API_URL=https://api.exemplo.com npm run build` e olhar `dist/index.html`
+  (o CI faz o mesmo e valida o `vercel.json`).
+- Prévias do Vercel (outros branches) não falam com a API sem acrescentar a URL delas em `CORS_ORIGENS` (ADR-0009).
+
+## API dormindo (Render Free, ticket 66)
+
+A API publicada dorme após 15 minutos sem tráfego e leva cerca de 1 minuto para acordar.
+
+- Ao abrir o site, `main.jsx` dispara `GET /saude` sem esperar a resposta (`acordarApi`, em `src/api/saude.js`).
+- Requisição à API sem resposta depois de 4 s (ou sendo repetida) mostra o aviso "O servidor está acordando..."
+  (`AvisoServidor`, `role="status"`); ele some quando não há mais requisição lenta (`src/api/lentidao.js`).
+- `GET` que falha por rede ou com `502`/`503`/`504` é repetido sozinho (esperas de 1, 2, 4, 8 e 15 s, até ~90 s no
+  total). `POST`, `PUT`, `PATCH`, `DELETE` e o upload **nunca** são repetidos (duplicariam a ação): a mensagem de
+  erro pede para tentar de novo em instantes. Não há tempo-limite curto nas requisições.
+- No Compose/local a API responde rápido e o aviso não aparece.
+
+## Fotos (contrato 1.4, ADR-0010, ticket 67)
+
+`Foto.url` continua `/uploads/salas/{sala_id}/{uuid}.jpg` (agora servida do banco). Foto que não carrega (ex.: `404`
+de uma foto antiga cujo arquivo se perdeu na importação) vira um bloco "Foto indisponível" (`FotoApi`), sem laço de
+erro e mantendo o `alt`; no admin, o bloco diz que a foto pode ser removida. O admin informa que as fotos são
+reduzidas para até 1600 px, salvas em JPEG e sem localização (GPS). O mock (`npm run dev:mock`) tem uma foto assim
+na sala 8.
 
 ## Sessão e troca de senha (contrato 1.2, ADR-0008)
 

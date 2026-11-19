@@ -4,6 +4,7 @@ import { atualizarLegendaFoto, enviarFoto, excluirFoto, reordenarFotos } from '.
 import { useAvisos } from '../../components/avisos';
 import { useConfirmar } from '../../components/useConfirmar';
 import ErroApiAlerta from '../../components/ErroApiAlerta';
+import FotoApi from '../../components/FotoApi';
 import { mensagemDeErro } from '../../utils/formatacao';
 import { TIPOS_FOTO, limiteUploadMb, validarFoto } from '../../utils/fotos';
 
@@ -33,7 +34,11 @@ function ItemFoto({ foto, indice, total, salaId, aoMover, aoRemover, aoAtualizar
 
   return (
     <li className="foto-item">
-      <img src={urlArquivo(foto.url)} alt={foto.legenda || `Foto ${indice + 1}`} />
+      <FotoApi
+        src={urlArquivo(foto.url)}
+        alt={foto.legenda || `Foto ${indice + 1}`}
+        substituto="Foto indisponível: o arquivo não foi encontrado. Você pode remover esta foto."
+      />
       <div className="foto-item-corpo">
         <span className="foto-ordem">{indice === 0 ? 'Capa' : `#${indice + 1}`}</span>
         <form onSubmit={salvar} className="foto-legenda">
@@ -154,7 +159,7 @@ export default function EditorFotos({ sala }) {
   const remover = async (foto) => {
     const ok = await confirmar({
       titulo: 'Remover foto',
-      mensagem: `Remover esta foto${foto.legenda ? ` (“${foto.legenda}”)` : ''}? O arquivo será apagado.`,
+      mensagem: `Remover esta foto${foto.legenda ? ` (“${foto.legenda}”)` : ''}? A foto será apagada.`,
       textoConfirmar: 'Remover',
       perigo: true,
     });
@@ -185,7 +190,11 @@ export default function EditorFotos({ sala }) {
         <label htmlFor="fotos-arquivos" className={enviando ? 'botao desabilitado' : 'botao'}>
           Enviar fotos…
         </label>
-        <span className="texto-suave">JPEG, PNG ou WebP, até {limiteUploadMb()} MB cada. Você pode escolher várias de uma vez.</span>
+        <span className="texto-suave">
+          JPEG, PNG ou WebP, até {limiteUploadMb()} MB cada. Você pode escolher várias de uma vez. As fotos são
+          reduzidas para até 1600 px no lado maior e salvas em JPEG; a localização (GPS) e os outros dados da foto
+          são removidos.
+        </span>
       </div>
 
       {envios.length > 0 && (

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { urlArquivo } from '../api/cliente';
+import FotoApi from './FotoApi';
 import Modal from './Modal';
 
 /** Galeria de fotos (§3.5): miniaturas + visualização ampliada (setas, Esc). */
@@ -45,7 +46,7 @@ export default function Galeria({ fotos, nomeSala }) {
           onClick={() => setAmpliada(true)}
           aria-label={`Ampliar foto: ${textoAlt(atual, indice)}`}
         >
-          <img src={urlArquivo(atual.url)} alt={textoAlt(atual, indice)} />
+          <FotoApi src={urlArquivo(atual.url)} alt={textoAlt(atual, indice)} decoding="async" />
         </button>
         {atual.legenda && <figcaption>{atual.legenda}</figcaption>}
       </figure>
@@ -61,7 +62,7 @@ export default function Galeria({ fotos, nomeSala }) {
                 aria-label={`Ver foto ${i + 1}${foto.legenda ? `: ${foto.legenda}` : ''}`}
                 aria-current={i === indice ? 'true' : undefined}
               >
-                <img src={urlArquivo(foto.url)} alt="" loading="lazy" />
+                <FotoApi src={urlArquivo(foto.url)} alt="" substituto="Indisponível" loading="lazy" decoding="async" />
               </button>
             </li>
           ))}
@@ -70,7 +71,7 @@ export default function Galeria({ fotos, nomeSala }) {
 
       <Modal aberto={ampliada} titulo={`${nomeSala} · foto ${indice + 1} de ${total}`} aoFechar={() => setAmpliada(false)} tamanho="galeria">
         <figure className="galeria-ampliada">
-          <img src={urlArquivo(atual.url)} alt={textoAlt(atual, indice)} />
+          <FotoApi src={urlArquivo(atual.url)} alt={textoAlt(atual, indice)} decoding="async" />
           {atual.legenda && <figcaption>{atual.legenda}</figcaption>}
         </figure>
         {total > 1 && (

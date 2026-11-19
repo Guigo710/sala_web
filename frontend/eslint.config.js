@@ -25,7 +25,7 @@ export default [
     },
   },
   {
-    files: ['**/*.test.{js,jsx}', 'src/testes/**', 'e2e/**', 'vite.config.js', 'eslint.config.js', 'playwright.config.js'],
+    files: ['**/*.test.{js,jsx}', 'src/testes/**', 'e2e/**', 'vite-plugins/**', 'vite.config.js', 'eslint.config.js', 'playwright.config.js'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node, ...globals.vitest },
     },

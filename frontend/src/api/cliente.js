@@ -4,7 +4,13 @@
  * - Envia `Authorization: Bearer <token>` quando há sessão.
  * - Converte o envelope de erro (§1.4) em `ErroApi`.
  * - 401 em rota protegida (com token enviado) avisa a sessão para limpar e ir ao login.
+ * - API dormindo (ticket 66, ADR-0009): `GET` que falha por rede ou 502/503/504 é repetido com espera
+ *   crescente por até ~90 s; os outros métodos e o upload nunca são repetidos sozinhos (duplicariam a ação).
+ *   Requisições lentas aparecem no aviso "servidor acordando" (`lentidao.js`). Sem tempo-limite curto:
+ *   esperar ~1 minuto pela API acordando é normal.
  */
+
+import { acompanharRequisicao } from './lentidao';
 
 export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 
@@ -21,7 +27,7 @@ export class ErroApi extends Error {
 }
 
 const MENSAGENS_PADRAO = {
-  0: 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.',
+  0: 'Não foi possível conectar ao servidor. Verifique sua conexão e tente de novo em instantes.',
   400: 'Requisição inválida.',
   401: 'Sua sessão expirou. Entre novamente.',
   403: 'Você não tem permissão para esta ação.',
@@ -32,7 +38,19 @@ const MENSAGENS_PADRAO = {
   422: 'Dados inválidos.',
   429: 'Muitas tentativas. Aguarde alguns minutos.',
   500: 'Erro interno do servidor. Tente novamente mais tarde.',
+  502: 'O servidor está indisponível no momento (pode estar acordando). Tente de novo em instantes.',
+  503: 'O servidor está indisponível no momento (pode estar acordando). Tente de novo em instantes.',
+  504: 'O servidor demorou para responder (pode estar acordando). Tente de novo em instantes.',
 };
+
+/** Falhas que, num `GET`, indicam a API acordando ou fora do ar por instantes: vale repetir. */
+const STATUS_REPETIVEIS = new Set([0, 502, 503, 504]);
+/** Esperas entre as tentativas de um `GET` (crescentes; a última se repete até o prazo). */
+export const ESPERAS_REPETICAO_MS = [1000, 2000, 4000, 8000, 15000];
+/** Tempo total, desde a primeira tentativa, depois do qual um `GET` não é mais repetido. */
+export const PRAZO_REPETICAO_MS = 90_000;
+
+const esperar = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
 
 let tokenAtual = null;
 let aoNaoAutenticado = null;
@@ -133,25 +151,46 @@ async function lerCorpo(resposta) {
  */
 export async function requisitar(metodo, caminho, { query, corpo, formData } = {}) {
   const url = `${API_URL}${caminho}${montarQuery(query)}`;
-  const tokenEnviado = Boolean(tokenAtual);
-  const init = { method: metodo, headers: cabecalhos() };
-  if (formData) {
-    init.body = formData;
-  } else if (corpo !== undefined) {
-    init.headers['Content-Type'] = 'application/json';
-    init.body = JSON.stringify(corpo);
-  }
-
-  let resposta;
+  const podeRepetir = metodo === 'GET';
+  const prazo = Date.now() + PRAZO_REPETICAO_MS;
+  const acompanhamento = acompanharRequisicao();
   try {
-    resposta = await buscar(url, init);
-  } catch {
-    throw new ErroApi({ status: 0, codigo: 'SEM_CONEXAO', detail: MENSAGENS_PADRAO[0] });
-  }
+    for (let tentativa = 0; ; tentativa += 1) {
+      // Cabeçalhos a cada tentativa: o token pode ter mudado durante a espera.
+      const tokenEnviado = Boolean(tokenAtual);
+      const init = { method: metodo, headers: cabecalhos() };
+      if (formData) {
+        init.body = formData;
+      } else if (corpo !== undefined) {
+        init.headers['Content-Type'] = 'application/json';
+        init.body = JSON.stringify(corpo);
+      }
 
-  const dados = await lerCorpo(resposta);
-  if (!resposta.ok) throw criarErro(resposta.status, dados, tokenEnviado);
-  return dados;
+      let resposta = null;
+      try {
+        resposta = await buscar(url, init);
+      } catch {
+        resposta = null; // falha de rede (ou CORS): status 0
+      }
+
+      const status = resposta ? resposta.status : 0;
+      if (podeRepetir && STATUS_REPETIVEIS.has(status)) {
+        const espera = ESPERAS_REPETICAO_MS[Math.min(tentativa, ESPERAS_REPETICAO_MS.length - 1)];
+        if (Date.now() + espera <= prazo) {
+          acompanhamento.marcarLenta();
+          await esperar(espera);
+          continue;
+        }
+      }
+
+      if (!resposta) throw new ErroApi({ status: 0, codigo: 'SEM_CONEXAO', detail: MENSAGENS_PADRAO[0] });
+      const dados = await lerCorpo(resposta);
+      if (!resposta.ok) throw criarErro(resposta.status, dados, tokenEnviado);
+      return dados;
+    }
+  } finally {
+    acompanhamento.terminar();
+  }
 }
 
 export const api = {

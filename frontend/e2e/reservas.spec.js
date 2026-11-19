@@ -156,7 +156,8 @@ test('recorrência: prévia lista o conflito e reserva só as datas livres', asy
   await tela(page, 'recorrencia-previa');
   await dialogo.getByRole('button', { name: `Reservar só as livres selecionadas (${livres - 1})` }).click();
   await expect(dialogo).toBeHidden();
-  await expect(page.getByText(new RegExp(`Reserva semanal criada: ${livres - 1} datas reservadas`))).toBeVisible();
+  // Singular quando sobra 1 data (fim de semestre perto de hoje): "1 data reservada".
+  await expect(page.getByText(new RegExp(`Reserva semanal criada: ${livres - 1} datas? reservadas?`))).toBeVisible();
   await tela(page, 'recorrencia-confirmada');
 
   const minhas = await page.request

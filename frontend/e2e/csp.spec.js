@@ -5,6 +5,10 @@
  *
  * Só faz sentido contra o nginx (imagem do frontend / Compose); o `vite preview` não manda CSP.
  * Sem cabeçalho CSP o teste é pulado, a menos que E2E_EXIGIR_CSP=1 (aí falha).
+ *
+ * Também roda contra o site do Vercel (ticket 65, ADR-0009), reconhecido pelo `'unsafe-inline'` em `style-src`
+ * do cabeçalho: lá o cabeçalho é fixo (`vercel.json`, `https:` em img/connect) e a origem da API vem da
+ * `<meta http-equiv="Content-Security-Policy">` gravada no build com VERCEL=1.
  */
 import { expect, test } from '@playwright/test';
 import { ADMIN_RM, ADMIN_SENHA, API_URL, auth, criarSalaApi, tokenApi } from './apoio';
@@ -48,7 +52,7 @@ async function vigiarCsp(page) {
   return violacoes;
 }
 
-test('o app roda sob a CSP do nginx sem violações (login, agenda, detalhe com foto, admin)', async ({ page }) => {
+test('o app roda sob a CSP (nginx ou Vercel) sem violações (login, agenda, detalhe com foto, admin)', async ({ page }) => {
   const violacoes = await vigiarCsp(page);
 
   const resposta = await page.goto('/login');
@@ -58,10 +62,25 @@ test('o app roda sob a CSP do nginx sem violações (login, agenda, detalhe com 
     throw new Error('E2E_EXIGIR_CSP=1, mas a resposta não trouxe Content-Security-Policy.');
   }
   const origemApi = new URL(API_URL).origin;
-  expect(csp).toContain(`connect-src 'self' ${origemApi}`);
-  expect(csp).toContain(`img-src 'self' ${origemApi}`);
-  expect(csp).not.toContain("'unsafe-inline'");
   expect(csp).not.toContain("'unsafe-eval'");
+  expect(csp).toMatch(/script-src 'self';/);
+  if (csp.includes("style-src 'self' 'unsafe-inline'")) {
+    // Vercel: cabeçalho fixo + meta do build com a origem da API; sem nonce.
+    expect(csp).toContain("img-src 'self' https:;");
+    expect(csp).toContain("connect-src 'self' https:;");
+    expect(csp).toContain("frame-ancestors 'none'");
+    const meta = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+    expect(meta).toContain(`connect-src 'self' ${origemApi};`);
+    expect(meta).toContain(`img-src 'self' ${origemApi};`);
+    expect(meta).toMatch(/script-src 'self';/);
+    expect(meta).not.toMatch(/unsafe-eval|nonce-/);
+    expect(await page.locator('meta[name="csp-nonce"]').count()).toBe(0);
+  } else {
+    // nginx (Compose): origem da API no cabeçalho e nonce por resposta, sem 'unsafe-inline'.
+    expect(csp).toContain(`connect-src 'self' ${origemApi}`);
+    expect(csp).toContain(`img-src 'self' ${origemApi}`);
+    expect(csp).not.toContain("'unsafe-inline'");
+  }
 
   // Login (fetch para a API: connect-src).
   await page.getByLabel('RM').fill(ADMIN_RM);

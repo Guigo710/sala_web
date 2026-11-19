@@ -1,6 +1,6 @@
 # 67: Fotos servidas pelo banco: substituto para imagem quebrada, textos do admin e mocks
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Pixel
 Origem: Atlas
 Prioridade: média
@@ -27,3 +27,17 @@ na importação responde `404` na `url`, (c) uploads acima de 40 megapixels são
 - [ ] Vitest: imagem que dispara `error` mostra o substituto, uma vez só.
 - [ ] Texto do admin presente; E2E de upload (`e2e/csp.spec.js`) segue verde contra a API nova.
 - [ ] Nenhuma mudança necessária em `urlArquivo` (`/uploads/...` relativo continua funcionando).
+
+## Resolução (Pixel, rodada 5)
+- `src/components/FotoApi.jsx`: `<img>` que, no `error`, vira um `<span class="foto-indisponivel">` (ícone +
+  "Foto indisponível"), sem laço (o substituto não carrega nada; tenta de novo só se o `src` mudar), com
+  `role="img"` e nome = `alt` + texto; com `alt=""` fica `aria-hidden`. Usado em `Galeria` (principal, miniaturas,
+  ampliada; `decoding="async"`), `CartaoSala` e `EditorFotos` (texto "o arquivo não foi encontrado. Você pode remover
+  esta foto.").
+- `EditorFotos`: texto sobre redução para até 1600 px, JPEG e remoção da localização (GPS); `413` continua mostrando o
+  `detail` da API (teste com "40 megapixels"); confirmação de remoção diz "A foto será apagada".
+- Mocks/testes: exemplos com `.jpg`; o mock de desenvolvimento ganhou na sala 8 uma foto `/uploads/...jpg` inexistente
+  (mostra o substituto); upload do mock continua `blob:`. `urlArquivo` sem mudança.
+- Vitest: substituto aparece uma vez só, mantém o alt, troca de `src` tenta de novo; galeria; admin (texto, substituto,
+  413). Conferido no navegador: foto com arquivo apagado (404) mostra o substituto no detalhe, no cartão e no admin,
+  sem violação de CSP. `e2e/csp.spec.js` verde (contra a API do `HEAD`; a API nova do Forge ainda estava em edição).

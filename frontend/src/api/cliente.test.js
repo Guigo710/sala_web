@@ -1,4 +1,14 @@
-import { aoSessaoExpirada, definirToken, definirTransporte, ErroApi, montarQuery, requisitar } from './cliente';
+import {
+  aoSessaoExpirada,
+  definirToken,
+  definirTransporte,
+  enviarFormulario,
+  ErroApi,
+  montarQuery,
+  PRAZO_REPETICAO_MS,
+  requisitar,
+} from './cliente';
+import { haLentidao } from './lentidao';
 
 const resposta = (status, corpo) =>
   new Response(corpo === null ? null : JSON.stringify(corpo), {
@@ -91,13 +101,19 @@ describe('requisitar: casos extras (Sentinela)', () => {
     expect(erro).toMatchObject({ status: 422, codigo: 'VALIDACAO', erros: [{ campo: 'body.capacidade' }], conflitos: null });
   });
 
+  // POST: falhas de rede e 502 não são repetidas (ticket 66), então o erro chega na hora.
   it('falha de rede vira SEM_CONEXAO; corpo não-JSON usa mensagem padrão', async () => {
     definirTransporte(() => Promise.reject(new TypeError('Failed to fetch')));
-    await expect(requisitar('GET', '/salas')).rejects.toMatchObject({ status: 0, codigo: 'SEM_CONEXAO' });
+    await expect(requisitar('POST', '/salas', { corpo: {} })).rejects.toMatchObject({ status: 0, codigo: 'SEM_CONEXAO' });
     definirTransporte(() => Promise.resolve(new Response('<html>Bad Gateway</html>', { status: 502 })));
-    await expect(requisitar('GET', '/salas')).rejects.toMatchObject({
+    await expect(requisitar('POST', '/salas', { corpo: {} })).rejects.toMatchObject({
       status: 502,
       codigo: 'ERRO_INTERNO',
+      detail: 'O servidor está indisponível no momento (pode estar acordando). Tente de novo em instantes.',
+    });
+    definirTransporte(() => Promise.resolve(new Response('<html>Erro</html>', { status: 500 })));
+    await expect(requisitar('POST', '/salas', { corpo: {} })).rejects.toMatchObject({
+      status: 500,
       detail: 'Erro interno do servidor. Tente novamente mais tarde.',
     });
   });
@@ -108,5 +124,92 @@ describe('requisitar: casos extras (Sentinela)', () => {
     definirTransporte(() => Promise.resolve(resposta(401, { detail: 'x', codigo: 'NAO_AUTENTICADO' })));
     await expect(requisitar('GET', '/reservas/minhas')).rejects.toBeInstanceOf(ErroApi);
     expect(aoExpirar).not.toHaveBeenCalled();
+  });
+});
+
+describe('API dormindo (ticket 66): nova tentativa só em GET', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('GET com 503 seguido de 200 resolve com os dados (e marca lentidão enquanto repete)', async () => {
+    const fetchFalso = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('<html>Service Unavailable</html>', { status: 503 }))
+      .mockResolvedValueOnce(resposta(200, [{ id: 3 }]));
+    definirTransporte(fetchFalso);
+    const promessa = requisitar('GET', '/salas');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+    expect(haLentidao()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(promessa).resolves.toEqual([{ id: 3 }]);
+    expect(fetchFalso).toHaveBeenCalledTimes(2);
+    expect(haLentidao()).toBe(false);
+  });
+
+  it('GET repete falha de rede, 502 e 504 com espera crescente', async () => {
+    const fetchFalso = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(new Response('', { status: 502 }))
+      .mockResolvedValueOnce(new Response('', { status: 504 }))
+      .mockResolvedValueOnce(resposta(200, { status: 'ok' }));
+    definirTransporte(fetchFalso);
+    const promessa = requisitar('GET', '/saude');
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); // +1 s
+    expect(fetchFalso).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2000); // +2 s
+    expect(fetchFalso).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(4000); // +4 s
+    await expect(promessa).resolves.toEqual({ status: 'ok' });
+    expect(fetchFalso).toHaveBeenCalledTimes(4);
+  });
+
+  it('GET desiste depois de ~90 s e rejeita com o último erro', async () => {
+    const fetchFalso = vi.fn().mockImplementation(() => Promise.resolve(new Response('', { status: 503 })));
+    definirTransporte(fetchFalso);
+    const promessa = requisitar('GET', '/salas');
+    const resultado = expect(promessa).rejects.toMatchObject({ status: 503 });
+    await vi.advanceTimersByTimeAsync(PRAZO_REPETICAO_MS + 1000);
+    await resultado;
+    // 1 + 2 + 4 + 8 + 15×5 = 90 s de espera: 10 tentativas no total.
+    expect(fetchFalso).toHaveBeenCalledTimes(10);
+    expect(haLentidao()).toBe(false);
+  });
+
+  it('GET não repete 4xx nem 500', async () => {
+    for (const status of [400, 401, 404, 409, 500]) {
+      const fetchFalso = vi.fn().mockResolvedValue(resposta(status, { detail: 'x', codigo: 'X' }));
+      definirTransporte(fetchFalso);
+      await expect(requisitar('GET', '/salas/1')).rejects.toMatchObject({ status });
+      expect(fetchFalso).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('%s com 503 rejeita sem repetir', async (metodo) => {
+    const fetchFalso = vi.fn().mockResolvedValue(new Response('', { status: 503 }));
+    definirTransporte(fetchFalso);
+    const erro = await requisitar(metodo, '/reservas', { corpo: {} }).catch((e) => e);
+    expect(erro).toMatchObject({ status: 503, detail: expect.stringMatching(/Tente de novo em instantes/) });
+    await vi.advanceTimersByTimeAsync(PRAZO_REPETICAO_MS);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST com falha de rede rejeita sem repetir', async () => {
+    const fetchFalso = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    definirTransporte(fetchFalso);
+    await expect(requisitar('POST', '/auth/login', { corpo: {} })).rejects.toMatchObject({ status: 0 });
+    await vi.advanceTimersByTimeAsync(PRAZO_REPETICAO_MS);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+
+  it('upload (multipart) com 503 rejeita sem repetir', async () => {
+    const fetchFalso = vi.fn().mockResolvedValue(new Response('', { status: 503 }));
+    definirTransporte(fetchFalso);
+    await expect(enviarFormulario('/salas/3/fotos', new FormData())).rejects.toMatchObject({ status: 503 });
+    await vi.advanceTimersByTimeAsync(PRAZO_REPETICAO_MS);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
   });
 });

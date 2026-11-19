@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router';
 import App from './App';
 import { AuthProvider } from './auth/AuthContext';
 import AvisosProvider from './components/AvisosProvider';
+import AvisoServidor from './components/AvisoServidor';
+import { acordarApi } from './api/saude';
 import './styles/global.css';
 
 async function iniciar() {
@@ -14,12 +16,16 @@ async function iniciar() {
     instalarMock();
   }
 
+  // Acorda a API (Render Free dorme após 15 min) sem esperar a resposta: não atrasa a renderização (ticket 66).
+  acordarApi();
+
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       <BrowserRouter>
         <AuthProvider>
           <AvisosProvider>
             <App />
+            <AvisoServidor />
           </AvisosProvider>
         </AuthProvider>
       </BrowserRouter>

@@ -1,6 +1,6 @@
 # 66: Interface para a API "dormindo" (Render Free acorda em cerca de 1 minuto)
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Pixel
 Origem: Atlas
 Prioridade: média
@@ -30,3 +30,19 @@ Hoje o usuário veria a tela parada, sem explicação, ou "Não foi possível co
 - [ ] Vitest: `GET` com `503` seguido de `200` resolve com os dados; `POST` com `503` rejeita sem repetir.
 - [ ] Vitest: o `GET /saude` inicial é disparado uma vez e não bloqueia a renderização.
 - [ ] Testes e E2E atuais verdes.
+
+## Resolução (Pixel, rodada 5)
+- `src/api/saude.js`: `acordarApi()` dispara `GET /saude` uma vez por carregamento, sem devolver promessa e ignorando
+  erro; chamado em `main.jsx` antes do `render`.
+- `src/api/lentidao.js`: conta requisições pendentes há mais de 4 s (ou sendo repetidas); `AvisoServidor`
+  (`role="status"`, faixa discreta no topo, montado em `main.jsx`) mostra "O servidor está acordando. Isso pode levar
+  até 1 minuto na primeira visita." e some quando não há mais requisição lenta.
+- `src/api/cliente.js`: `GET` com falha de rede ou `502`/`503`/`504` é repetido com esperas de 1, 2, 4, 8 e 15 s
+  (a última se repete) até 90 s desde a primeira tentativa (10 tentativas no máximo); token relido a cada tentativa.
+  `POST`/`PUT`/`PATCH`/`DELETE` e upload nunca repetem; mensagens padrão de `0`/`502`/`503`/`504` pedem para
+  "tentar de novo em instantes". Sem tempo-limite.
+- Vitest: aviso com resposta atrasada 5 s (relógio falso) aparece aos 4 s e some ao responder; `503`→`200` resolve;
+  rede/502/504 com esperas crescentes; desiste em ~90 s; 4xx/500 não repetem; POST/PUT/PATCH/DELETE/upload com `503`
+  rejeitam sem repetir; `acordarApi` dispara uma vez e não bloqueia a renderização.
+- Conferido no navegador (Playwright contra o servidor que simula o Vercel, API atrasando 6 s e `503` no primeiro
+  `/saude`): aviso aos ~4,5 s, lista carregada e aviso some; `/saude` repetido. E2E existentes verdes.

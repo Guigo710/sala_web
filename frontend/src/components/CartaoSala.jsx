@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { urlArquivo } from '../api/cliente';
 import { corDoTipo } from '../utils/formatacao';
+import FotoApi from './FotoApi';
 
 function IconeTipo({ tipo }) {
   const lab = tipo?.startsWith('lab_');
@@ -30,7 +31,7 @@ export default function CartaoSala({ sala }) {
       <Link to={`/ambientes/${sala.id}`} className="cartao-sala-link">
         <div className="cartao-sala-capa" style={{ '--cor-tipo': corDoTipo(sala.tipo) }}>
           {capa ? (
-            <img src={capa} alt="" loading="lazy" />
+            <FotoApi src={capa} alt="" loading="lazy" decoding="async" />
           ) : (
             <div className="capa-vazia">
               <IconeTipo tipo={sala.tipo} />

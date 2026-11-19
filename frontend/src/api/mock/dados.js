@@ -16,6 +16,7 @@ const somar = (t, n) => {
   return iso(d);
 };
 
+/** As fotos do mock são SVG em `data:` (não há servidor de /uploads no mock); a API real usa `/uploads/...jpg`. */
 function svgFoto(titulo, legenda, cor1, cor2, variante) {
   const formas = [
     `<rect x="70" y="250" width="660" height="180" fill="#0002"/><rect x="110" y="200" width="120" height="70" rx="6" fill="#fff3"/><rect x="340" y="200" width="120" height="70" rx="6" fill="#fff3"/><rect x="570" y="200" width="120" height="70" rx="6" fill="#fff3"/>`,
@@ -103,6 +104,19 @@ export function criarDadosIniciais() {
         url: svgFoto(nome, legendas[k], cores[tipo][0], cores[tipo][1], k + i),
         legenda: legendas[k],
         ordem: k + 1,
+        criado_em: agora,
+      });
+      fotoId += 1;
+    }
+    if (id === 8) {
+      // Foto antiga cujo arquivo se perdeu (ADR-0010): no formato real do contrato 1.4 (/uploads/...jpg),
+      // que não existe na API e cai no substituto "Foto indisponível" (ticket 67).
+      fotos.push({
+        id: fotoId,
+        sala_id: id,
+        url: '/uploads/salas/8/00000000-0000-4000-8000-000000000000.jpg',
+        legenda: 'Foto antiga (arquivo perdido)',
+        ordem: qtdFotos + 1,
         criado_em: agora,
       });
       fotoId += 1;

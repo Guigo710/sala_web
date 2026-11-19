@@ -1,6 +1,6 @@
 # 65: `vercel.json` (fallback do React Router, cabeçalhos de segurança) e CSP no Vercel
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Pixel
 Origem: Atlas
 Prioridade: alta
@@ -47,3 +47,22 @@ O Compose (nginx com nonce) **não muda**.
 - [ ] Agenda (FullCalendar) com estilos corretos e sem erro de CSP no console; fotos da API aparecem; login funciona
       contra a API publicada (conferido no ticket 68).
 - [ ] Nenhum `'unsafe-eval'`, nenhum `'unsafe-inline'` em `script-src`.
+
+## Resolução (Pixel, rodada 5)
+- `frontend/vercel.json`: `rewrites` com `source` `/((?!.*\.[A-Za-z0-9]+$).*)` → `/index.html` (só caminhos sem
+  extensão; conferido com `path-to-regexp@6.1.0`, o do Vercel); `headers` em `/(.*)` com os 4 cabeçalhos + a CSP do
+  ADR-0009; `/assets/(.*)` com `Cache-Control: public, max-age=31536000, immutable`. Sem `buildCommand`/`outputDirectory`.
+- `frontend/vite-plugins/csp-vercel.js` (registrado no `vite.config.js`, `apply: 'build'`): só com `VERCEL` definido,
+  calcula a origem de `VITE_API_URL` (regex do Dockerfile; vazia ou inválida → build falha com mensagem que aponta
+  Settings → Environment Variables), põe a `<meta http-equiv="Content-Security-Policy">` como primeiro elemento do
+  `<head>` e remove a `<meta name="csp-nonce">` (e o comentário dela). Sem `VERCEL` o HTML sai idêntico (teste).
+- Testes: `vite-plugins/csp-vercel.test.js` (origem, meta, plugin com/sem VERCEL, `vercel.json` válido com a CSP exata,
+  fallback só sem extensão). CI (job frontend): build sem VERCEL mantém `__CSP_NONCE__`; build com
+  `VERCEL=1 VITE_API_URL=https://api.exemplo.com` confere a meta e o `vercel.json`.
+- `e2e/csp.spec.js` reconhece o modo Vercel (`'unsafe-inline'` em `style-src` do cabeçalho) e então confere a meta.
+- Validação local: `dist/` do build `VERCEL=1` servido por um servidor estático que aplica as regras do `vercel.json`
+  (sistema de arquivos primeiro, depois `rewrites`; `headers` por `source`), API local atrás de HTTPS
+  (`https://localhost:8443`, porque o cabeçalho só libera `https:`): `/agenda`, `/ambientes/3`, `/admin/ambientes` → 200;
+  `/src/main.jsx`, `/assets/nao-existe.js`, `/.env` → 404; cabeçalhos presentes; Playwright 9/9 E2E + 2 verificações
+  extras, sem violação de CSP, FullCalendar com estilos (`.fc-header-toolbar` flex).
+- `README.md` do frontend: seção "Publicação no Vercel". Implantação real (prévia/produção) fica para o ticket 68.

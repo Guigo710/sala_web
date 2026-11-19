@@ -1560,6 +1560,84 @@ fieldset {
   height: 1.75rem;
 }
 
+/* ---------- servidor acordando (ticket 66) ---------- */
+.aviso-servidor {
+  position: fixed;
+  left: 50%;
+  top: 0.75rem;
+  z-index: 70;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2rem);
+}
+
+.aviso-servidor.visivel {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid #f0d58a;
+  border-radius: var(--raio-pequeno);
+  background: var(--cor-aviso-fundo);
+  color: var(--cor-aviso);
+  box-shadow: var(--sombra-alta);
+  font-size: 0.925rem;
+}
+
+.aviso-servidor-icone {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #f0d58a;
+  border-top-color: var(--cor-aviso);
+  border-radius: 50%;
+  animation: girar 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aviso-servidor-icone {
+    animation-duration: 3s;
+  }
+}
+
+/* ---------- foto indisponível (ticket 67) ---------- */
+.foto-indisponivel {
+  width: 100%;
+  min-height: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: #e5e9ef;
+  color: var(--cor-texto-suave);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.foto-indisponivel svg {
+  flex: none;
+}
+
+.cartao-sala-capa .foto-indisponivel {
+  height: 100%;
+}
+
+.galeria-principal .foto-indisponivel,
+.galeria-ampliada .foto-indisponivel {
+  aspect-ratio: 16 / 9;
+}
+
+.miniatura .foto-indisponivel {
+  aspect-ratio: 4 / 3;
+  min-height: 0;
+  font-size: 0.7rem;
+}
+
+.foto-item .foto-indisponivel {
+  aspect-ratio: 16 / 10;
+}
+
 /* ---------- prévia de recorrência ---------- */
 .previa {
   display: flex;
