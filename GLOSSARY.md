@@ -29,9 +29,20 @@ Termos do domínio. Use exatamente estes nomes em código, rotas, tickets e tela
 | **Reserva recorrente** | Conjunto de reservas semanais (mesmo ambiente, dia da semana e aulas) até o fim do semestre. | |
 | **Grupo de recorrência** | Registro (`grupos_recorrencia`) que une as ocorrências de uma reserva recorrente. | "série" no código |
 | **Ocorrência** | Cada reserva (data) dentro de um grupo de recorrência. | |
-| **Prévia** | Simulação da recorrência que lista datas livres e em conflito, sem gravar. | "preview" |
+| **Prévia** | Simulação da recorrência que lista datas livres e em conflito, sem gravar. | "preview"; não confundir com *implantação de prévia* |
 | **Conflito** | Sobreposição de tempo entre duas reservas ativas do mesmo ambiente. | "choque" |
 | **Disponibilidade** | Situação livre/ocupada de um ambiente por aula numa data. | |
 | **Cancelamento** | Mudar a reserva para `cancelada` (nunca apagar). Dono até o início da aula; admin sempre. | "excluir reserva" |
 | **Agenda** | Visão de calendário (mês, semana, dia) das reservas. | |
 | **Sessão** | Um token JWT emitido no login (um por dispositivo/navegador). Todas as sessões de uma conta caem juntas ao trocar/redefinir a senha, mudar o papel ou desativar a conta (ADR-0008). | "login ativo" |
+
+## Termos de publicação (ADR-0009)
+
+Não são do domínio, mas aparecem em tickets e no guia `docs/publicacao.md`.
+
+| Termo | Definição | Evitar |
+|---|---|---|
+| **Site oficial (produção)** | O frontend publicado no Vercel a partir do branch `main`, com a API do Render e o banco do Neon. | "prod" em textos para o usuário |
+| **Implantação de prévia** | Cópia do frontend que o Vercel publica para cada branch que não é o `main`. Não acessa a API, salvo se a URL entrar em `CORS_ORIGENS`. | "prévia" sozinho (é a da recorrência) |
+| **API dormindo** | Estado do web service grátis do Render após 15 min sem tráfego; a próxima requisição o acorda em cerca de 1 minuto. | "fora do ar" |
+| **Foto reduzida** | A versão que o servidor guarda no banco: lado maior até 1600 px, JPEG, sem metadados (ADR-0010). | "miniatura" (não existe na v1) |

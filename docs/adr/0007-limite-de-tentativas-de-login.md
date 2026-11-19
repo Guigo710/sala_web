@@ -31,3 +31,24 @@ compartilham aquele IP.
 - Um atacante atrás do mesmo NAT ainda pode, com 20 falhas, bloquear aquele IP por 5 minutos; aceito na v1.
 - Reiniciar o backend zera os contadores; com mais de um worker, cada um conta separado (como no ADR-0004).
 - Implementação: ticket 31 (Forge). Revisão: Sentinela (ticket 25).
+
+## Adendo 1 (2026-11-19, ticket 53): limite na troca da própria senha
+O ticket 50 estendeu a mesma ideia a `PUT /auth/me/senha` (Forge, rodada 4), registrado no contrato 1.4 (§4.2):
+- 5 `SENHA_ATUAL_INCORRETA` da **mesma conta** (chave = id do professor, qualquer token dela) em 5 minutos
+  bloqueiam a troca por 5 minutos; bloqueado → `429 MUITAS_TENTATIVAS` antes de conferir a senha (mesmo a certa);
+- troca certa zera o contador; independente do contador do login; em memória, por processo (mesmas consequências acima).
+
+Opção "mais forte" (revogar todas as sessões da conta ao estourar o limite): **não adotada na v1**.
+- A favor: quem roubou um token perderia o acesso depois de 5 chutes.
+- Contra: o dono que erra a senha atual 5 vezes seria derrubado de todos os dispositivos, inclusive no meio do
+  formulário, e o ADR-0008 garante hoje que "erro não muda nada"; mudaria comportamento documentado do frontend.
+- Risco que fica: com um token roubado, 5 chutes a cada 5 minutos durante a validade do token (8 h), cerca de 480
+  chutes, contra senha de no mínimo 8 caracteres. Aceito. Reavaliar se houver contas com senhas fracas ou tokens mais longos.
+
+## Adendo 2 (2026-11-19, ADR-0009): publicação no Render
+- Os contadores em memória só são corretos porque o Render Free roda **uma instância** com **um worker**.
+  Mais instâncias ou workers exigem armazenamento comum (ADR novo). Dormir/deploy zera os contadores (aceito).
+- Atrás do balanceador do Render todos os clientes têm o mesmo `request.client.host`: o par (IP, RM) vira, na
+  prática, contagem por RM, e o teto por IP viraria bloqueio global. O teto passa a ser configurável por
+  `LOGIN_MAX_FALHAS_IP` (padrão 20; `0` desliga) e fica `0` na produção do Render. `FORWARDED_ALLOW_IPS=*` continua
+  proibido (item 1). Detalhes e melhoria futura no ADR-0009.

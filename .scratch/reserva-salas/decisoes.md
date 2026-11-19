@@ -11,8 +11,18 @@ Se algo aqui contradiz o `README.md`, **vale este arquivo**.
 - Frontend: React + Vite, FullCalendar (somente plugins gratuitos: daygrid, timegrid, interaction).
 - Backend: Python + FastAPI, SQLAlchemy 2.x, Pydantic v2, Alembic para migrations.
 - Banco: PostgreSQL.
-- Execução: Docker Compose (`db`, `backend`, `frontend`), custo zero rodando local/na escola.
+- Execução: Docker Compose (`db`, `backend`, `frontend`), custo zero rodando local/na escola. Na internet: Vercel + Render + Neon, planos grátis (seção "Publicação").
 - Estrutura na raiz do repo: `backend/` e `frontend/`. A pasta antiga `Sala/` foi apagada.
+
+## Publicação na internet (rodada 5, ADR-0009)
+- **Frontend no Vercel** (plano Hobby, build estático do Vite, Root Directory `frontend`). O site oficial acompanha o
+  branch `main`; os outros branches viram implantações de prévia (sem acesso à API, salvo se incluídas em `CORS_ORIGENS`).
+- **API no Render**, web service grátis com o `backend/Dockerfile`. Dorme após 15 min sem tráfego (acorda em ~1 min);
+  disco efêmero (nada pode depender de arquivo em disco).
+- **Banco no Neon**, PostgreSQL grátis (~1 GB por projeto, conferir), conexão com SSL. O Postgres grátis do Render
+  expira em 30 dias e foi descartado.
+- O `docker compose` local continua funcionando para o grupo, também com as fotos no banco.
+- Guia passo a passo para o dono: `docs/publicacao.md`.
 
 ## Idioma
 - Código, tabelas, classes e rotas em **português** (`/salas`, `/reservas`, `Sala`, `Reserva`).
@@ -20,7 +30,7 @@ Se algo aqui contradiz o `README.md`, **vale este arquivo**.
 
 ## Domínio
 - **Ambientes**: uma tabela `salas` com campo `tipo` (ex.: `sala`, `lab_informatica`, `lab_ciencias`, ...). Hoje: 14 salas e 13 laboratórios; existem outros, com dados ainda incompletos. **Tudo editável pelo admin** (nada de dados fixos no código; o seed é só ponto de partida com nomes genéricos).
-- **Fotos**: galeria, várias fotos por ambiente (tabela própria, com ordem/legenda). Upload feito pelo admin; arquivos numa pasta do servidor (volume Docker), servidos como estáticos.
+- **Fotos**: galeria, várias fotos por ambiente (tabela própria, com ordem/legenda). Upload feito pelo admin. ~~Arquivos numa pasta do servidor (volume Docker), servidos como estáticos.~~ **Rodada 5:** reduzidas no upload (lado maior ~1600 px, JPEG, ~300 KB) e guardadas **no próprio banco**, servidas pela API com cache longo (ADR-0010).
 - **Equipamentos**: catálogo de equipamentos + associação sala–equipamento com `quantidade` e `especificacao` (ex.: 30 PCs, i5, 16GB).
 - **Softwares**: tabela própria (nome, versão, categoria) com associação N:N a ambientes. Permite filtro "quais labs têm X".
 - **Horários**: aulas fixas (slots) em tabela `horarios_aula` editável pelo admin (turno, ordem, início, fim, dias da semana em que vale). Grade de referência FATEC Indaiatuba (ex.: manhã 07:30–08:20, 08:20–09:10, intervalo 09:10–09:30, ...). **Há aulas aos sábados** (poucas). O seed deve trazer uma grade plausível manhã/tarde/noite que o admin ajusta.

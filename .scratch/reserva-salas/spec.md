@@ -103,15 +103,20 @@ Não há autocadastro: só o admin cria contas. O primeiro admin vem de variáve
 - O professor dono da reserva vem **sempre do token**. Professor que envia `professor_id` no corpo recebe 403. Admin pode enviar `professor_id` para reservar em nome de outro.
 - Conta inativa não loga (401) e tokens dela passam a ser rejeitados (401).
 - Erros seguidos de senha bloqueiam temporariamente o login daquele RM naquele IP (e, acima de um teto, o IP): ADR-0007.
+  Na publicação no Render o teto por IP fica desligado (todos chegam pelo mesmo balanceador): ADR-0009.
+- Errar a senha atual 5 vezes em 5 minutos na troca da própria senha bloqueia a troca por 5 minutos (ADR-0007, adendo 1).
 - Admin não pode desativar a si mesmo nem remover o próprio papel de admin (422 `OPERACAO_EM_SI_MESMO`).
 - Rotas de leitura do catálogo e da agenda são públicas; a agenda pública mostra o **nome** do professor, nunca o RM.
 - Matriz completa de permissões por rota: `docs/api-contrato.md`.
 
 ### RN09 Fotos
 - Upload só por admin. Formatos JPEG, PNG, WebP; até `UPLOAD_MAX_MB` (padrão 5 MB). O servidor confere o conteúdo (assinatura do arquivo), não só a extensão.
-- O nome no disco é gerado pelo servidor (UUID + extensão); o nome original não é usado no caminho.
-- Arquivos ficam em volume Docker e são servidos como estáticos em `/uploads/...`.
-- Ordem da galeria editável; excluir foto apaga o registro e o arquivo.
+- O servidor reduz a foto no upload (lado maior até 1600 px, JPEG, sem metadados como o GPS) e guarda só essa
+  versão **no banco** (ADR-0010; antes ficava em volume Docker, ADR-0005). O nome público é gerado pelo servidor
+  (UUID + `.jpg`); o nome original não é usado.
+- A API serve as fotos em `/uploads/...` com cache longo (contrato §4.1). Fotos antigas em disco são importadas
+  para o banco automaticamente ao subir o backend.
+- Ordem da galeria editável; excluir foto apaga o registro (com a imagem).
 
 ## 5. Fora de escopo (v1)
 

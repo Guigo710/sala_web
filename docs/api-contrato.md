@@ -2,7 +2,7 @@
 
 Responsável: Atlas. **Forge implementa e Pixel consome exatamente este documento.**
 Mudanças no contrato só via ticket `Responsável: Atlas`. Regras de negócio detalhadas: `.scratch/reserva-salas/spec.md`.
-Versão: **1.3** (2026-11-15). O que mudou desde a 1.0 está no §7 (Histórico).
+Versão: **1.4** (2026-11-19). O que mudou desde a 1.0 está no §7 (Histórico).
 
 Sumário
 1. Convenções gerais
@@ -20,7 +20,11 @@ Sumário
 ## 1. Convenções gerais
 
 ### 1.1 Base, formato e nomes
-- Base URL: `http://localhost:8000` (frontend usa `VITE_API_URL`). **Sem prefixo** de versão; rotas **sem barra final** (`/salas`, nunca `/salas/`).
+- Base URL: `http://localhost:8000` no Compose; na publicação, a URL do web service no Render, ex.:
+  `https://sala-web-api.onrender.com` (ADR-0009). O frontend usa `VITE_API_URL`. **Sem prefixo** de versão; rotas
+  **sem barra final** (`/salas`, nunca `/salas/`).
+- Na publicação a API pode estar **dormindo** (Render Free): a primeira requisição depois de 15 minutos sem tráfego
+  demora cerca de 1 minuto e depois responde normalmente. Não é erro; o cliente deve esperar (ADR-0009, ticket 66).
 - Corpo e respostas em JSON UTF-8 (`Content-Type: application/json`), exceto upload de foto (`multipart/form-data`).
 - Tamanho máximo do corpo: **1 MB** em todas as rotas, exceto o upload de foto (§4.4). Acima disso →
   `413 CORPO_GRANDE` ("A requisição passa do tamanho máximo de 1 MB."), com ou sem `Content-Length`
@@ -69,6 +73,12 @@ do §6 ser fechada.
 
 ### 1.5 CORS
 Origens permitidas em `CORS_ORIGENS` (separadas por vírgula; padrão `http://localhost:5173`). Métodos `GET, POST, PUT, PATCH, DELETE`; headers `Authorization, Content-Type`.
+- Comparação **exata** de origem (esquema + host + porta). A API tira a barra final de cada item
+  (`https://x.vercel.app/` vale como `https://x.vercel.app`), registra no log as origens aceitas ao iniciar e
+  **recusa subir** com `*`. Sem curingas nem expressões regulares.
+- Publicação (ADR-0009): `CORS_ORIGENS` = origem do site oficial do Vercel (ex.: `https://sala-web.vercel.app`).
+  As **implantações de prévia** do Vercel têm outras origens e **não** acessam a API, a menos que a URL do branch
+  seja acrescentada em `CORS_ORIGENS`.
 **Toda** resposta, inclusive as de erro (`4xx`, `413` recusado pelo `Content-Length` ou no meio da leitura, `500`),
 leva os cabeçalhos CORS quando a origem é permitida. Sem eles o navegador esconde o envelope e o frontend só vê "sem conexão".
 
@@ -102,10 +112,13 @@ Toda resposta da API (JSON, erros e `/uploads`) leva:
 - `X-Frame-Options: DENY`;
 - `Referrer-Policy: no-referrer`.
 
-Arquivos servidos com sucesso em `/uploads/...` levam também `Content-Disposition: inline`,
-`Content-Security-Policy: default-src 'none'; sandbox` e `Cache-Control: public, max-age=86400` (o nome do arquivo
-é um UUID, então o conteúdo de uma URL nunca muda). Nada disso muda o uso pelo frontend: as fotos continuam
-em `<img src>`, que não depende de CSP do arquivo nem de frames.
+Fotos servidas com sucesso em `/uploads/...` (`200` e `304`) levam também `Content-Disposition: inline`,
+`Content-Security-Policy: default-src 'none'; sandbox` e
+**`Cache-Control: public, max-age=31536000, immutable`** (contrato 1.4; era `max-age=86400`): o nome tem um UUID e o
+conteúdo de um nome nunca muda (não existe "trocar" uma foto, só excluir e enviar outra). Os `200` levam ainda
+`Content-Type` (hoje sempre `image/jpeg`), `Content-Length` e `ETag` forte (`"<uuid>"`); ver §4.1.
+Sem `Cross-Origin-Resource-Policy` restritivo (frontend e API têm origens diferentes na publicação).
+Nada disso muda o uso pelo frontend: as fotos continuam em `<img src>`, que não depende de CSP do arquivo nem de frames.
 
 ---
 
@@ -117,11 +130,22 @@ Migrations com Alembic. A primeira migration cria a extensão:
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 ```
 
-Migrations existentes: `0001_inicial` (tudo do §2.1, exceto o abaixo) e `0002_token_versao` (contrato 1.2):
+Migrations existentes: `0001_inicial` (tudo do §2.1, exceto o abaixo), `0002_token_versao` (contrato 1.2) e
+`0003_fotos_no_banco` (contrato 1.4, ADR-0010):
 
 ```sql
+-- 0002_token_versao
 ALTER TABLE professores ADD COLUMN token_versao integer NOT NULL DEFAULT 0;
+
+-- 0003_fotos_no_banco
+ALTER TABLE fotos_sala ADD COLUMN conteudo  bytea;
+ALTER TABLE fotos_sala ADD COLUMN tipo_mime varchar(30);
+ALTER TABLE fotos_sala ADD COLUMN tamanho   integer;
+ALTER TABLE fotos_sala ALTER COLUMN conteudo SET STORAGE EXTERNAL;  -- JPEG não comprime
 ```
+
+Depois das migrations, o `CMD` do backend roda o seed (ADR-0006) e `python -m app.importar_fotos`, que leva para o
+banco as fotos antigas ainda em disco (`UPLOAD_DIR`) e é idempotente (ADR-0010).
 
 Todas as tabelas têm PK `id serial` (exceto as de associação). `criado_em`/`atualizado_em` são `timestamptz NOT NULL DEFAULT now()`; `atualizado_em` é atualizado pelo ORM (`onupdate`).
 
@@ -160,7 +184,10 @@ CREATE TABLE salas (
 CREATE TABLE fotos_sala (
     id         serial PRIMARY KEY,
     sala_id    integer      NOT NULL REFERENCES salas(id) ON DELETE CASCADE,
-    arquivo    varchar(255) NOT NULL UNIQUE,              -- caminho relativo a UPLOAD_DIR: "salas/3/<uuid>.jpg"
+    arquivo    varchar(255) NOT NULL UNIQUE,              -- nome público: "salas/3/<uuid>.jpg" (url = "/uploads/" || arquivo)
+    conteudo   bytea,                                     -- JPEG já reduzido (ADR-0010); NULL só em foto antiga não encontrada na importação
+    tipo_mime  varchar(30),                               -- "image/jpeg"
+    tamanho    integer,                                   -- bytes de conteudo
     legenda    varchar(200),
     ordem      integer      NOT NULL DEFAULT 0,
     criado_em  timestamptz  NOT NULL DEFAULT now()
@@ -336,7 +363,10 @@ Os rótulos de `tipo` são servidos por `GET /salas/tipos`; Pixel não deve fix�
   "criado_em": "2026-08-02T14:00:00-03:00"
 }
 ```
-`url` é relativa à base da API; Pixel monta `${VITE_API_URL}${url}`.
+`url` é relativa à base da API; Pixel monta `${VITE_API_URL}${url}`. Formato `/uploads/salas/{sala_id}/{uuid}.jpg`,
+igual ao da 1.3 (contrato 1.4: o conteúdo vem do banco, não mais de disco; ADR-0010). Toda foto nova é JPEG reduzido
+(§4.4). Os bytes **nunca** vêm no JSON: só pela `url`. Uma foto antiga cujo arquivo se perdeu pode responder `404`
+na `url` (o frontend mostra um substituto; ticket 67).
 
 ### 3.6 `SalaResumo` (listagem)
 ```json
@@ -460,7 +490,10 @@ Erros comuns a toda rota protegida (`401 NAO_AUTENTICADO`, `403 SEM_PERMISSAO`) 
 | Método | Rota | Acesso | Resposta |
 |---|---|---|---|
 | GET | `/saude` | público | `200 {"status": "ok"}` (faz `SELECT 1` no banco; se falhar, `503 {"status": "erro"}`) |
-| GET | `/uploads/{caminho}` | público | arquivo estático de `UPLOAD_DIR` (StaticFiles), com os cabeçalhos do §1.9. |
+| GET | `/uploads/{arquivo}` | público | `200` com os bytes da foto lidos do banco (`fotos_sala.arquivo = {arquivo}`), com os cabeçalhos do §1.9. Com `If-None-Match` igual ao `ETag` → `304` sem corpo. Nome inexistente, ou foto sem conteúdo → `404 NAO_ENCONTRADO` (envelope). Vale também para foto de sala inativa (o nome é um UUID). |
+
+Até a 1.3 esta rota era o `StaticFiles` sobre a pasta `UPLOAD_DIR`; a 1.4 mantém o caminho e troca a origem dos bytes (ADR-0010).
+O `/saude` é o health check do Render (ADR-0009): `503` faz o deploy novo falhar e a versão anterior continua no ar.
 
 ### 4.2 Auth
 
@@ -483,7 +516,10 @@ Erros: `401 CREDENCIAIS_INVALIDAS` (RM inexistente, senha errada **ou conta inat
 - 5 falhas do mesmo **par (IP, RM)** em 5 min bloqueiam esse par por 5 min;
 - 20 falhas do mesmo **IP** em 5 min (qualquer RM) bloqueiam o IP por 5 min;
 - enquanto bloqueado, responde `429` mesmo com a senha certa; login certo zera as falhas daquele par.
-O IP é o da conexão; `X-Forwarded-For` só vale vindo de proxy listado em `FORWARDED_ALLOW_IPS` (uvicorn).
+O IP é o da conexão; `X-Forwarded-For` só vale vindo de proxy listado em `FORWARDED_ALLOW_IPS` (uvicorn; nunca `*`).
+O teto por IP é configurável por `LOGIN_MAX_FALHAS_IP` (padrão 20; `0` desliga). Na publicação no Render todos os
+clientes chegam com o IP do balanceador, então lá o teto fica **desligado** e a contagem por par vale, na prática,
+por RM (ADR-0009, adendo 2 do ADR-0007).
 
 JWT: HS256, segredo `JWT_SECRET`, expiração `JWT_EXPIRA_MINUTOS` (padrão 480). Claims: `sub` (id do professor, string), `papel`, `ver` (inteiro: `token_versao` da conta na emissão), `iat`, `exp`. A cada requisição o backend recarrega o professor do banco (papel e `ativo` valem do banco, não do token).
 
@@ -503,8 +539,13 @@ Login, reativação e mudança de nome/e-mail não incrementam.
 ```
 `200` com o **mesmo corpo do `POST /auth/login`** (`access_token`, `token_type`, `expira_em`, `usuario`): o token novo
 substitui o da sessão atual; todos os tokens anteriores da conta, inclusive o usado nesta requisição, deixam de valer (ADR-0008).
-(Até a 1.1 era `204`.) Erros: `422 SENHA_ATUAL_INCORRETA`; `422 VALIDACAO` se `nova_senha` fora de 8–128 caracteres (§1.8).
-Erro não muda nada: `token_versao` e o token atual seguem valendo.
+(Até a 1.1 era `204`.) Erros: `422 SENHA_ATUAL_INCORRETA`; `422 VALIDACAO` se `nova_senha` fora de 8–128 caracteres (§1.8);
+`429 MUITAS_TENTATIVAS` (contrato 1.4, tickets 50 e 53, adendo 1 do ADR-0007):
+- 5 `SENHA_ATUAL_INCORRETA` da **mesma conta** (qualquer token dela) em 5 min bloqueiam a troca por 5 min;
+- enquanto bloqueado, responde `429` **antes** de conferir a senha, mesmo com a `senha_atual` certa;
+  corpo: `{"detail": "Muitas tentativas de troca de senha. Aguarde 5 minutos e tente novamente.", "codigo": "MUITAS_TENTATIVAS"}`;
+- troca certa zera o contador; contador próprio, independente do login (errar aqui não bloqueia o login e vice-versa).
+Erro não muda nada: `token_versao` e o token atual seguem valendo (também no `429`: as sessões não são revogadas).
 
 ### 4.3 Salas
 
@@ -584,7 +625,7 @@ Mesmo corpo do `POST` (substituição completa dos campos básicos; equipamentos
 `200` → `SalaDetalhe`. Erros: `409 NOME_DUPLICADO`.
 
 #### `DELETE /salas/{id}` (admin)
-`204`. Apaga fotos (registros e arquivos) e associações. Erros: `409 SALA_COM_RESERVAS` (existe qualquer reserva, de qualquer status: desative com `ativo=false`).
+`204`. Apaga fotos (registros, com o conteúdo; ADR-0010) e associações. Erros: `409 SALA_COM_RESERVAS` (existe qualquer reserva, de qualquer status: desative com `ativo=false`).
 
 #### `PUT /salas/{id}/equipamentos` (admin)
 Substitui **toda** a lista de equipamentos da sala.
@@ -605,7 +646,21 @@ Substitui toda a lista. Ids repetidos são ignorados (a lista é um conjunto; di
 
 ### 4.4 Fotos
 
-Formatos aceitos: JPEG, PNG, WebP, conferidos pelo conteúdo (assinatura), não só pela extensão/`Content-Type`. Tamanho máximo `UPLOAD_MAX_MB` (padrão 5). Arquivo salvo como `UPLOAD_DIR/salas/{sala_id}/{uuid4}.{jpg|png|webp}`.
+Formatos aceitos **na entrada**: JPEG, PNG, WebP, conferidos pelo conteúdo (assinatura), não só pela extensão/`Content-Type`.
+Tamanho máximo **na entrada**: `UPLOAD_MAX_MB` (padrão 5 MB, sem mudança).
+
+**Redução no upload** (contrato 1.4, ADR-0010). O servidor não guarda o arquivo enviado; guarda no banco esta versão:
+| Item | Regra |
+|---|---|
+| Resolução de entrada | até 40 megapixels (conferido antes de decodificar); acima → `413 ARQUIVO_GRANDE` |
+| Orientação | aplica a do EXIF (a foto fica em pé) |
+| Tamanho | lado maior **≤ 1600 px**, proporção mantida; imagem menor **não** é ampliada |
+| Cor / transparência | RGB; transparência composta sobre fundo branco |
+| Formato de saída | **JPEG** (`image/jpeg`), qualidade 80, progressivo; se passar de 600 KB, regrava uma vez com qualidade 70 |
+| Metadados | todos removidos (EXIF, inclusive GPS, XMP, comentários); mantém só o perfil de cor ICC |
+| Nome | `salas/{sala_id}/{uuid4}.jpg` (gerado pelo servidor; o nome enviado é descartado) |
+
+Tamanho típico guardado: 200–450 KB por foto.
 
 #### `GET /salas/{id}/fotos` (público)
 `200` → `Foto[]` ordenadas por `ordem`, `id`.
@@ -613,7 +668,8 @@ Formatos aceitos: JPEG, PNG, WebP, conferidos pelo conteúdo (assinatura), não 
 #### `POST /salas/{id}/fotos` (admin)
 `multipart/form-data`: `arquivo` (file, obrigatório), `legenda` (texto ≤ 200, opcional). Uma foto por requisição (Pixel envia várias em sequência).
 `201` → `Foto` com `ordem = (maior ordem da sala) + 1`.
-Erros: `413 ARQUIVO_GRANDE` ("A foto passa do limite de N MB."), `415 TIPO_ARQUIVO_INVALIDO`.
+Erros: `413 ARQUIVO_GRANDE` ("A foto passa do limite de N MB." ou, pela resolução, "A foto passa do limite de
+40 megapixels."), `415 TIPO_ARQUIVO_INVALIDO` (não é JPEG/PNG/WebP, ou tem a assinatura mas não pode ser lida como imagem).
 O `413` vale com ou sem `Content-Length`: a requisição inteira é barrada cedo acima de `UPLOAD_MAX_MB` + 512 KB
 (folga do multipart), sem ler o resto do corpo, e o arquivo é conferido exatamente contra `UPLOAD_MAX_MB` na leitura.
 Esta rota não usa o limite de 1 MB do §1.1.
@@ -625,7 +681,8 @@ Esta rota não usa o limite de 1 MB do §1.1.
 `legenda` ausente, `null` ou vazia remove a legenda. `200` → `Foto`. Foto de outra sala → `404`.
 
 #### `DELETE /salas/{id}/fotos/{foto_id}` (admin)
-`204`. Apaga registro e arquivo.
+`204`. Apaga o registro (com o conteúdo). A `url` passa a responder `404`; navegadores que já a guardaram em cache
+podem continuar mostrando a imagem até limpar o cache, mas ela não aparece mais em nenhuma lista.
 
 #### `PUT /salas/{id}/fotos/ordem` (admin)
 ```json
@@ -903,9 +960,9 @@ Sem nada a cancelar → `200` com `canceladas: 0`. Erros: `403 SEM_PERMISSAO`.
 | 409 | `HORARIO_EM_USO` | Excluir horário referenciado por reserva |
 | 409 | `SEMESTRE_SOBREPOSTO` | Semestres com datas sobrepostas |
 | 409 | `SEMESTRE_EM_USO` | Excluir semestre com grupo de recorrência |
-| 413 | `ARQUIVO_GRANDE` | Foto acima de `UPLOAD_MAX_MB` (só `POST /salas/{id}/fotos`; com ou sem `Content-Length`) |
+| 413 | `ARQUIVO_GRANDE` | Foto acima de `UPLOAD_MAX_MB` (com ou sem `Content-Length`) ou acima de 40 megapixels (só `POST /salas/{id}/fotos`) |
 | 413 | `CORPO_GRANDE` | Corpo da requisição acima de 1 MB (rotas que não são upload de foto; §1.1) |
-| 415 | `TIPO_ARQUIVO_INVALIDO` | Foto que não é JPEG/PNG/WebP |
+| 415 | `TIPO_ARQUIVO_INVALIDO` | Foto que não é JPEG/PNG/WebP, ou que tem a assinatura mas não pode ser lida como imagem |
 | 422 | `VALIDACAO` | Erro de schema/parâmetro (traz `erros`) |
 | 422 | `DATA_PASSADA` | Início da reserva já passou |
 | 422 | `AULAS_NAO_SEGUIDAS` | Aulas de turnos diferentes, com buraco na ordem, ou inativas |
@@ -919,7 +976,7 @@ Sem nada a cancelar → `200` com `canceladas: 0`. Erros: `403 SEM_PERMISSAO`.
 | 422 | `ORDEM_FOTOS_INVALIDA` | Lista de reordenação não bate com as fotos da sala |
 | 422 | `SENHA_ATUAL_INCORRETA` | Troca de senha com senha atual errada |
 | 422 | `OPERACAO_EM_SI_MESMO` | Admin desativando, rebaixando ou excluindo a si mesmo |
-| 429 | `MUITAS_TENTATIVAS` | Limite de tentativas de login (ADR-0007) |
+| 429 | `MUITAS_TENTATIVAS` | Limite de tentativas de login, ou de `senha_atual` errada na troca da própria senha (ADR-0007 e adendo 1) |
 | 4xx | `ERRO_HTTP` | Outro erro HTTP gerado pelo framework, sem código próprio (reserva; não deve ocorrer no uso normal) |
 | 500 | `ERRO_INTERNO` | Erro inesperado |
 
@@ -928,6 +985,24 @@ Respostas `503` só existem em `GET /saude` (corpo `{"status": "erro"}`, fora do
 ---
 
 ## 7. Histórico de mudanças
+
+### 1.4 (2026-11-19): publicação (Vercel + Render + Neon) e fotos no banco (ADR-0009, ADR-0010, ticket 53)
+Mudanças que **exigem código**:
+- Fotos guardadas no banco, reduzidas no upload (lado maior ≤ 1600 px, JPEG, sem metadados, ≤ 40 MP na entrada).
+  Migration `0003_fotos_no_banco`, rota `GET /uploads/{arquivo}` lendo do banco, importação das fotos antigas
+  (§2, §4.1, §4.4). Forge (tickets 60 e 61).
+- `Foto.url` **mantém o formato** `/uploads/salas/{sala_id}/{uuid}.jpg`: nada muda no frontend para exibir.
+  Fotos antigas ganham nome novo `.jpg` uma única vez, na importação. Pixel: substituto para imagem que dá `404` (ticket 67).
+- `/uploads`: `Cache-Control: public, max-age=31536000, immutable`, `ETag` e `304` (§1.9, §4.1). Forge (ticket 60).
+- `413 ARQUIVO_GRANDE` também por resolução (> 40 MP); `415 TIPO_ARQUIVO_INVALIDO` também para imagem ilegível (§4.4, §6).
+- `CORS_ORIGENS`: barra final ignorada, `*` recusado, origens no log (§1.5). Forge (ticket 62).
+- `LOGIN_MAX_FALHAS_IP` (padrão 20, `0` desliga; desligado no Render) (§4.2). Forge (ticket 62).
+- API escuta em `PORT` (padrão 8000); pool de conexões para o Neon (ADR-0009). Forge (tickets 62 e 63).
+
+Esclarecimentos (o backend já se comporta assim; só passou a estar escrito):
+- `PUT /auth/me/senha`: `429 MUITAS_TENTATIVAS` após 5 `senha_atual` erradas da mesma conta em 5 min (§4.2, §6;
+  ticket 50, registrado no ticket 53). O Pixel já mostra o `detail` de qualquer erro. As sessões não são revogadas.
+- §1.1: na publicação a API pode demorar cerca de 1 minuto para acordar.
 
 ### 1.3 (2026-11-15): limite de corpo e cabeçalhos de segurança (tickets 40, 44 e 47)
 O backend já se comporta assim (Forge, rodada 3); só passou a estar escrito. Nenhuma mudança de código pedida.

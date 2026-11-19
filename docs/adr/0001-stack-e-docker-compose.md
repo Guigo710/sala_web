@@ -1,6 +1,10 @@
 # ADR-0001: Stack React + FastAPI + PostgreSQL, executada com Docker Compose
 
-Status: aceito · Data: 2026-11-12 · Atualizado: 2026-11-15 (tickets 42 e 43) · Autor: Atlas
+Status: aceito · Data: 2026-11-12 · Atualizado: 2026-11-15 (tickets 42 e 43), 2026-11-19 (ADR-0009 e ADR-0010) · Autor: Atlas
+
+> Rodada 5: a publicação na internet (Vercel + Render + Neon) está no ADR-0009; o Compose continua sendo a forma de
+> rodar localmente ou num servidor da escola. As fotos passaram para o banco (ADR-0010): o volume `uploads` fica só
+> leitura, para importar as fotos antigas, e o serviço `uploads-permissoes` sai.
 
 ## Contexto
 Trabalho de disciplina, equipe de 3 pessoas, custo zero, rodando localmente ou num servidor da escola.
@@ -15,7 +19,9 @@ Pydantic v2, Alembic, PostgreSQL. Precisamos que qualquer membro suba tudo com u
     máquina, mas o banco não fica acessível pela rede da escola. O backend do Compose usa a rede interna (host `db`).
   - `backend`: build de `backend/Dockerfile`, porta 8000, sobe só depois do `db` saudável; ao iniciar roda
     `alembic upgrade head`, o seed idempotente (política no ADR-0006) e `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
-    Volume nomeado `uploads` montado em `/app/uploads` (fotos).
+    ~~Volume nomeado `uploads` montado em `/app/uploads` (fotos).~~ Desde o ADR-0010: volume `uploads` montado só
+    leitura (`:ro`), para o comando de importação levar as fotos antigas ao banco. A porta do `uvicorn` vem de
+    `PORT` (padrão 8000; ADR-0009).
   - `frontend`: build de produção multi-stage de `frontend/Dockerfile` (ticket 42): `node:22-alpine` roda
     `npm ci && npm run build`; `nginx:1.28-alpine` serve o `dist/` com `frontend/nginx.conf` (fallback de SPA para
     `index.html`, arquivo inexistente com extensão → 404, cache longo só em `/assets/`, cabeçalhos `nosniff`,
