@@ -1,0 +1,217 @@
+# CI do sala_web (ticket 28): testes do backend contra Postgres real, lint/test/build do frontend
+# e o E2E com Playwright (frontend de produção + API + banco com seed).
+# Só valores de teste aqui: nenhum segredo real.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TZ: America/Sao_Paulo
+
+jobs:
+  backend:
+    name: Backend (pytest + Postgres 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sala_web
+          POSTGRES_PASSWORD: sala_web
+          POSTGRES_DB: sala_web_teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sala_web -d sala_web_teste"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql+psycopg://sala_web:sala_web@localhost:5432/sala_web_teste
+      DATABASE_URL_TESTE: postgresql+psycopg://sala_web:sala_web@localhost:5432/sala_web_teste
+      JWT_SECRET: segredo-de-teste-do-ci-nao-usar-em-producao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; else pip install -r requirements.txt; fi
+      - name: Migrations (alembic upgrade head)
+        run: alembic upgrade head
+      - name: Testes
+        run: python -m pytest -ra
+
+  frontend:
+    name: Frontend (lint, test, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_API_URL: http://localhost:8000
+      - name: Build sem VERCEL mantém o marcador do nonce do nginx (ticket 52)
+        run: grep -q '__CSP_NONCE__' dist/index.html && ! grep -q 'http-equiv="Content-Security-Policy"' dist/index.html
+      - name: Build como no Vercel (ticket 65, ADR-0009) e vercel.json
+        env:
+          VERCEL: '1'
+          VITE_API_URL: https://api.exemplo.com
+        run: |
+          npm run build
+          falhou=0
+          meta=$(grep -o '<meta http-equiv="Content-Security-Policy" content="[^"]*"' dist/index.html || true)
+          echo "$meta"
+          echo "$meta" | grep -q "connect-src 'self' https://api.exemplo.com;" || { echo "meta CSP sem a API em connect-src"; falhou=1; }
+          echo "$meta" | grep -q "img-src 'self' https://api.exemplo.com;" || { echo "meta CSP sem a API em img-src"; falhou=1; }
+          echo "$meta" | grep -q "script-src 'self';" || { echo "script-src diferente de 'self'"; falhou=1; }
+          if echo "$meta" | grep -q "unsafe-eval\|nonce-"; then echo "meta CSP com unsafe-eval ou nonce"; falhou=1; fi
+          if grep -q '__CSP_NONCE__' dist/index.html; then echo "marcador __CSP_NONCE__ no build do Vercel"; falhou=1; fi
+          node -e '
+            const v = JSON.parse(require("fs").readFileSync("vercel.json", "utf8"));
+            const csp = v.headers.find((h) => h.source === "/(.*)").headers.find((h) => h.key === "Content-Security-Policy").value;
+            const esperado = "default-src '\''self'\''; script-src '\''self'\''; style-src '\''self'\'' '\''unsafe-inline'\''; img-src '\''self'\'' https:; connect-src '\''self'\'' https:; font-src '\''self'\'' data:; object-src '\''none'\''; base-uri '\''self'\''; form-action '\''self'\''; frame-ancestors '\''none'\''";
+            if (csp !== esperado) { console.error("CSP do vercel.json diferente do ADR-0009:\n" + csp); process.exit(1); }
+            console.log("vercel.json OK");
+          ' || falhou=1
+          exit $falhou
+
+  imagens:
+    name: Imagens Docker (backend + frontend nginx)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build da imagem do backend
+        run: docker build -t sala_web-backend:ci backend
+      - name: Build da imagem do frontend (nginx, ticket 42)
+        run: docker build --build-arg VITE_API_URL=http://localhost:8000 -t sala_web-frontend:ci frontend
+      - name: Fumaça do nginx (SPA, sem código-fonte, cabeçalhos)
+        run: |
+          docker run -d --name web -p 127.0.0.1:8080:80 sala_web-frontend:ci
+          for i in $(seq 20); do curl -sf http://127.0.0.1:8080/ > /dev/null && break; sleep 1; done
+          falhou=0
+          checa() { codigo=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080$1"); echo "$1 -> $codigo (esperado $2)"; [ "$codigo" = "$2" ] || falhou=1; }
+          checa /agenda 200
+          checa /admin/ambientes 200
+          checa /ambientes/3 200
+          checa /src/main.jsx 404
+          checa /.env 404
+          curl -sI http://127.0.0.1:8080/agenda | grep -qi '^x-content-type-options: nosniff' || { echo "sem nosniff"; falhou=1; }
+          curl -sI http://127.0.0.1:8080/agenda | grep -qi '^x-frame-options: deny' || { echo "sem X-Frame-Options"; falhou=1; }
+          # CSP (ticket 52): origem da API do build arg, sem 'unsafe-inline', e o nonce do cabeçalho igual ao do HTML.
+          resp=$(curl -si http://127.0.0.1:8080/agenda | tr -d '\r')
+          csp=$(printf '%s\n' "$resp" | grep -i '^content-security-policy:' || true)
+          echo "$csp"
+          echo "$csp" | grep -q "connect-src 'self' http://localhost:8000;" || { echo "CSP sem a API em connect-src"; falhou=1; }
+          echo "$csp" | grep -q "img-src 'self' http://localhost:8000;" || { echo "CSP sem a API em img-src"; falhou=1; }
+          echo "$csp" | grep -q "frame-ancestors 'none'" || { echo "CSP sem frame-ancestors"; falhou=1; }
+          if echo "$csp" | grep -q "unsafe-inline\|unsafe-eval"; then echo "CSP com unsafe-*"; falhou=1; fi
+          nonce_cab=$(echo "$csp" | grep -o "'nonce-[0-9a-f]*'" | sed "s/'nonce-\(.*\)'/\1/")
+          nonce_html=$(printf '%s\n' "$resp" | grep -o 'name="csp-nonce" content="[0-9a-f]*"' | sed 's/.*content="\(.*\)"/\1/')
+          { [ -n "$nonce_cab" ] && [ "$nonce_cab" = "$nonce_html" ]; } || { echo "nonce do cabeçalho ($nonce_cab) != do HTML ($nonce_html)"; falhou=1; }
+          docker logs web
+          exit $falhou
+
+  e2e:
+    name: E2E (Playwright, sistema real)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sala_web
+          POSTGRES_PASSWORD: sala_web
+          POSTGRES_DB: sala_web
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sala_web -d sala_web"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://sala_web:sala_web@localhost:5432/sala_web
+      JWT_SECRET: segredo-de-teste-do-ci-nao-usar-em-producao
+      CORS_ORIGENS: http://localhost:5173
+      UPLOAD_DIR: /tmp/sala_web_uploads
+      ADMIN_RM: admin
+      ADMIN_SENHA: senha-admin-do-ci
+      E2E_ADMIN_RM: admin
+      E2E_ADMIN_SENHA: senha-admin-do-ci
+      VITE_API_URL: http://localhost:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Subir a API (migrations + seed + uvicorn)
+        working-directory: backend
+        run: |
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; else pip install -r requirements.txt; fi
+          alembic upgrade head
+          python -m app.seed
+          nohup uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
+          for i in $(seq 30); do curl -sf http://localhost:8000/saude && exit 0; sleep 1; done
+          cat /tmp/api.log; exit 1
+      - name: Subir o frontend (build de produção)
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run build
+          nohup npx vite preview --port 5173 --strictPort > /tmp/web.log 2>&1 &
+          for i in $(seq 30); do curl -sf http://localhost:5173/ > /dev/null && exit 0; sleep 1; done
+          cat /tmp/web.log; exit 1
+      - name: Playwright
+        working-directory: frontend
+        run: npx playwright test
+      - name: Logs e evidências
+        if: always()
+        run: |
+          echo "--- API"; cat /tmp/api.log || true
+          echo "--- Web"; cat /tmp/web.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-evidencias
+          path: |
+            frontend/test-results/
+          retention-days: 7

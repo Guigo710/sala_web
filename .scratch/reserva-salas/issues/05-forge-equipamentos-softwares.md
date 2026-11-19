@@ -1,0 +1,17 @@
+# 05: CRUD de equipamentos e softwares
+
+Status: resolved
+Responsável: Forge
+Origem: Atlas
+Blocked by: 03
+Referências: `docs/api-contrato.md` §4.5, §4.6
+
+## Critérios de aceite
+- [ ] Todas as rotas de §4.5 e §4.6 com os acessos e códigos do contrato.
+- [ ] `GET /softwares/categorias` devolve categorias distintas, não nulas, ordenadas.
+- [ ] Nome duplicado → `409 NOME_DUPLICADO` (softwares: mesmo nome+versão, inclusive versão nula).
+- [ ] Excluir equipamento/software remove as associações com salas (`204`).
+
+## Comments
+
+- **Forge (2026-11-12):** `routers/equipamentos.py`, `routers/softwares.py`. Verificado: `NOME_DUPLICADO` (inclusive versão nula/vazia), categorias distintas ordenadas, exclusão remove associações (CASCADE).
