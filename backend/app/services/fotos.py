@@ -1,5 +1,6 @@
-"""Galeria de fotos de um ambiente (contrato §4.4, ADR-0005): disco + banco coordenados."""
+"""Galeria de fotos de um ambiente (contrato §4.4). As fotos ficam no banco, já reduzidas (ADR-0010)."""
 
+import uuid
 from typing import BinaryIO
 
 from sqlalchemy import func, select
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import obter_config
 from app.core.erros import ErroApi, nao_encontrado
 from app.models import FotoSala, Professor
-from app.services import arquivos
+from app.services import arquivos, imagens
 from app.services.comum import commit_traduzindo
 from app.services.salas import obter_sala
 
@@ -33,26 +34,48 @@ def listar(db: Session, sala_id: int, usuario: Professor | None) -> list[FotoSal
     return _fotos_da_sala(db, sala.id)
 
 
+def nome_publico(sala_id: int) -> str:
+    """Nome público de uma foto nova: `salas/{sala_id}/{uuid4}.jpg` (o nome enviado é descartado)."""
+    return f"salas/{sala_id}/{uuid.uuid4()}.jpg"
+
+
+def preparar(conteudo: bytes) -> bytes:
+    """Confere a assinatura (JPEG/PNG/WebP) e devolve o JPEG reduzido que vai para o banco (ADR-0010)."""
+    if arquivos.tipo_por_assinatura(conteudo[:16]) is None:
+        raise ErroApi(415, "TIPO_ARQUIVO_INVALIDO", "Envie uma imagem JPEG, PNG ou WebP.")
+    return imagens.reduzir(conteudo)
+
+
 def enviar(db: Session, sala_id: int, admin: Professor, arquivo: BinaryIO, legenda: str | None) -> FotoSala:
-    """Lê com limite, confere a assinatura, grava em disco e só então no banco; se o banco falhar, apaga o arquivo."""
+    """Lê com limite, confere a assinatura, reduz e grava a linha com os bytes. Nada vai para o disco."""
     sala = obter_sala(db, sala_id, admin)
-    conteudo = arquivos.ler_limitado(arquivo, obter_config().upload_max_bytes)
-    relativo = arquivos.gravar_foto(sala.id, conteudo)
-    try:
-        foto = FotoSala(
-            sala_id=sala.id,
-            arquivo=relativo,
-            legenda=(legenda or "").strip() or None,
-            ordem=_proxima_ordem(db, sala.id),
-        )
-        db.add(foto)
-        commit_traduzindo(db)
-    except Exception:
-        db.rollback()
-        arquivos.apagar_arquivo(relativo)
-        raise
+    jpeg = preparar(arquivos.ler_limitado(arquivo, obter_config().upload_max_bytes))
+    foto = FotoSala(
+        sala_id=sala.id,
+        arquivo=nome_publico(sala.id),
+        conteudo=jpeg,
+        tipo_mime=imagens.TIPO_MIME,
+        tamanho=len(jpeg),
+        legenda=(legenda or "").strip() or None,
+        ordem=_proxima_ordem(db, sala.id),
+    )
+    db.add(foto)
+    commit_traduzindo(db)
     db.refresh(foto)
     return foto
+
+
+def obter_conteudo(db: Session, arquivo: str) -> tuple[bytes, str] | None:
+    """(bytes, tipo MIME) da foto com esse nome público; `None` se não existe ou ainda não tem conteúdo.
+
+    Consulta só as duas colunas (não carrega a sala nem a linha inteira).
+    """
+    linha = db.execute(
+        select(FotoSala.conteudo, FotoSala.tipo_mime).where(FotoSala.arquivo == arquivo)
+    ).first()
+    if linha is None or linha.conteudo is None:
+        return None
+    return linha.conteudo, linha.tipo_mime or imagens.TIPO_MIME
 
 
 def reordenar(db: Session, sala_id: int, admin: Professor, foto_ids: list[int]) -> list[FotoSala]:
@@ -80,7 +103,5 @@ def editar_legenda(db: Session, sala_id: int, foto_id: int, admin: Professor, le
 def excluir(db: Session, sala_id: int, foto_id: int, admin: Professor) -> None:
     obter_sala(db, sala_id, admin)
     foto = _obter_foto(db, sala_id, foto_id)
-    relativo = foto.arquivo
     db.delete(foto)
     commit_traduzindo(db)
-    arquivos.apagar_arquivo(relativo)

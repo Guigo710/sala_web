@@ -17,6 +17,13 @@ if not config.get_main_option("sqlalchemy.url"):
 target_metadata = Base.metadata
 
 
+def _timeout_conexao() -> int:
+    try:
+        return obter_config_banco().DB_CONEXAO_TIMEOUT_S
+    except Exception:  # noqa: BLE001  (sem DATABASE_URL no ambiente, ex.: URL definida pelos testes)
+        return 10
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
@@ -29,8 +36,13 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # NullPool: uma conexão só, fechada ao terminar. SSL (`?sslmode=require`, Neon) vem da própria URL.
+    # Timeout de conexão como o da API (ticket 63): banco suspenso acorda; banco fora do ar não pendura o deploy.
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+        connect_args={"connect_timeout": _timeout_conexao(), "application_name": "sala_web-alembic"},
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

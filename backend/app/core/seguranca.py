@@ -120,7 +120,7 @@ Db = Annotated[Session, Depends(get_db)]
 
 # ---------------------------------------------------------------- rate limit de login (ADR-0007)
 MAX_FALHAS_PAR = 5  # falhas do mesmo par (IP, RM) que bloqueiam o par
-MAX_FALHAS_IP = 20  # falhas do mesmo IP, de qualquer RM, que bloqueiam o IP
+MAX_FALHAS_IP = 20  # padrão de LOGIN_MAX_FALHAS_IP: falhas do mesmo IP, de qualquer RM, que bloqueiam o IP
 JANELA_S = 300  # janela de contagem
 BLOQUEIO_S = 300  # duração do bloqueio
 
@@ -174,7 +174,8 @@ class LimiteLogin:
     """Limite de tentativas de login em memória, por processo (ADR-0007).
 
     - par (IP, RM digitado): `max_falhas_par` falhas na janela bloqueiam o par;
-    - IP: `max_falhas_ip` falhas na janela, de qualquer RM, bloqueiam o IP.
+    - IP: `max_falhas_ip` falhas na janela, de qualquer RM, bloqueiam o IP; `0` desliga só esta contagem
+      (no Render todos chegam com o IP do balanceador e o teto viraria bloqueio global; ADR-0009).
     O RM entra na chave exatamente como digitado (mesmo critério da busca do login).
     `relogio` (segundos, monotônico) pode ser trocado nos testes.
     """
@@ -188,25 +189,33 @@ class LimiteLogin:
         relogio: Callable[[], float] = _time.monotonic,
     ) -> None:
         self.relogio = relogio
+        if max_falhas_ip < 0:
+            raise ValueError("max_falhas_ip deve ser >= 0")
         self._par = _Contador(max_falhas_par, janela_s, bloqueio_s)
         self._ip = _Contador(max_falhas_ip, janela_s, bloqueio_s)
+        self.teto_ip_ligado = max_falhas_ip > 0
         self._lock = threading.Lock()
+
+    @classmethod
+    def da_config(cls) -> "LimiteLogin":
+        return cls(max_falhas_ip=obter_config().LOGIN_MAX_FALHAS_IP)
 
     def bloqueado(self, ip: str, rm: str) -> bool:
         agora_s = self.relogio()
         with self._lock:
             # avalia os dois (cada um descarta o próprio bloqueio vencido)
             par = self._par.bloqueado((ip, rm), agora_s)
-            por_ip = self._ip.bloqueado(ip, agora_s)
+            por_ip = self.teto_ip_ligado and self._ip.bloqueado(ip, agora_s)
             return par or por_ip
 
     def registrar_falha(self, ip: str, rm: str) -> None:
         agora_s = self.relogio()
         with self._lock:
             self._par.descartar_vencidos(agora_s)
-            self._ip.descartar_vencidos(agora_s)
             self._par.registrar_falha((ip, rm), agora_s)
-            self._ip.registrar_falha(ip, agora_s)
+            if self.teto_ip_ligado:
+                self._ip.descartar_vencidos(agora_s)
+                self._ip.registrar_falha(ip, agora_s)
 
     def registrar_sucesso(self, ip: str, rm: str) -> None:
         """Login certo zera só as falhas do par (não as do IP)."""
@@ -224,7 +233,8 @@ class LimiteLogin:
             self._ip.limpar()
 
 
-limite_login = LimiteLogin()
+# Um único processo e um único worker (ADR-0009): os contadores em memória só valem assim.
+limite_login = LimiteLogin.da_config()
 
 
 # ---------------------------------------------------------------- limite na troca da própria senha (ticket 50)

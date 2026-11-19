@@ -24,6 +24,9 @@ log = logging.getLogger("sala_web")
 
 MENSAGEM_ERRO_INTERNO = "Erro interno no servidor. Tente novamente."
 
+# Fotos de /uploads (contrato 1.4 §1.9, ADR-0010): o nome tem um UUID e o conteúdo de um nome nunca muda.
+CACHE_UPLOADS = "public, max-age=31536000, immutable"
+
 
 async def _enviar_json(send: Send, status: int, corpo: dict) -> None:
     dados = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
@@ -168,6 +171,8 @@ class LimiteCorpo:
 class CabecalhosSeguranca:
     """`nosniff` em tudo; `X-Frame-Options`/`Referrer-Policy` em todas as respostas; e, em `/uploads`,
     `Content-Disposition: inline`, `Cache-Control` e uma CSP que impede executar qualquer coisa servida ali.
+    O `Cache-Control` da rota de `/uploads` (com `ETag`) é mantido; o daqui só vale se ela não puser um.
+    Sem `Cross-Origin-Resource-Policy`: frontend e API têm origens diferentes na publicação (§1.9).
     """
 
     def __init__(self, app: ASGIApp, prefixo_uploads: str = "/uploads/") -> None:
@@ -189,8 +194,7 @@ class CabecalhosSeguranca:
                 if eh_upload and mensagem["status"] < 400:
                     cab["Content-Disposition"] = "inline"
                     cab["Content-Security-Policy"] = "default-src 'none'; sandbox"
-                    # Nomes são UUIDs: o conteúdo de uma URL nunca muda.
-                    cab.setdefault("Cache-Control", "public, max-age=86400")
+                    cab.setdefault("Cache-Control", CACHE_UPLOADS)
             await send(mensagem)
 
         await self.app(scope, receive, enviar)

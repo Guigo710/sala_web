@@ -10,7 +10,6 @@ from app.core.erros import ErroApi, erro_validacao, nao_encontrado
 from app.core.tempo import agora, momento
 from app.models import (
     Equipamento,
-    FotoSala,
     GrupoRecorrencia,
     HorarioAula,
     Professor,
@@ -23,7 +22,7 @@ from app.models import (
 from app.schemas import reservas as sr
 from app.schemas import salas as ss
 from app.schemas.comum import HorarioAula as HorarioSaida
-from app.services import apresentacao, arquivos
+from app.services import apresentacao
 from app.services.aulas import ordem_turno_sql, validar_bloco
 from app.services.comum import commit_traduzindo, escapar_like
 
@@ -220,7 +219,7 @@ def definir_softwares(db: Session, sala_id: int, software_ids: Sequence[int], ad
 
 
 def excluir(db: Session, sala_id: int, admin: Professor) -> None:
-    """Só ambientes sem reservas nem grupos; apaga também as fotos do disco."""
+    """Só ambientes sem reservas nem grupos; as fotos (no banco) saem junto, em cascata (ADR-0010)."""
     sala = obter_sala(db, sala_id, admin)
     tem_reservas = db.scalar(
         select(
@@ -230,12 +229,7 @@ def excluir(db: Session, sala_id: int, admin: Professor) -> None:
     )
     if tem_reservas:
         raise _erro_com_reservas()
-    arquivos_fotos = list(db.scalars(select(FotoSala.arquivo).where(FotoSala.sala_id == sala.id)))
-    sala_id = sala.id
     db.delete(sala)
     commit_traduzindo(
         db, {"reservas_sala_id_fkey": _erro_com_reservas(), "grupos_recorrencia_sala_id_fkey": _erro_com_reservas()}
     )
-    for arquivo in arquivos_fotos:
-        arquivos.apagar_arquivo(arquivo)
-    arquivos.apagar_pasta_sala(sala_id)

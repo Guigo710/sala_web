@@ -1,14 +1,13 @@
-"""Fotos em disco (ADR-0005): validação por assinatura, gravação e remoção."""
+"""Leitura do arquivo enviado (ADR-0005/0010): assinatura, leitura com limite e caminho seguro em UPLOAD_DIR.
 
-import logging
-import shutil
-import uuid
+Nada é gravado nem apagado em disco (ADR-0010): as fotos ficam no banco. `caminho_absoluto` só é usado pela
+importação das fotos antigas (`python -m app.importar_fotos`), que apenas **lê** o disco.
+"""
+
 from pathlib import Path
 
 from app.core.config import obter_config
 from app.core.erros import ErroApi
-
-log = logging.getLogger("sala_web")
 
 _TAMANHO_BLOCO = 64 * 1024
 
@@ -25,7 +24,7 @@ def tipo_por_assinatura(cabecalho: bytes) -> str | None:
 
 
 def ler_limitado(arquivo, limite: int) -> bytes:  # noqa: ANN001
-    """Lê em blocos; passa do limite → 413 (nada é gravado em disco)."""
+    """Lê em blocos; passa do limite → 413 sem ler o resto."""
     partes: list[bytes] = []
     total = 0
     while True:
@@ -41,38 +40,11 @@ def ler_limitado(arquivo, limite: int) -> bytes:  # noqa: ANN001
     return b"".join(partes)
 
 
-def caminho_absoluto(relativo: str) -> Path:
-    base = obter_config().upload_dir
+def caminho_absoluto(relativo: str, base: Path | None = None) -> Path:
+    """Caminho de `relativo` dentro de `base` (padrão: UPLOAD_DIR); fora dela (`../`, caminho absoluto, link para
+    fora) → ValueError."""
+    base = (base or obter_config().upload_dir).resolve()
     caminho = (base / relativo).resolve()
     if base not in caminho.parents:
         raise ValueError("caminho fora de UPLOAD_DIR")
     return caminho
-
-
-def gravar_foto(sala_id: int, conteudo: bytes) -> str:
-    """Grava a foto e devolve o caminho relativo `salas/{id}/{uuid}.{ext}`."""
-    ext = tipo_por_assinatura(conteudo[:16])
-    if ext is None:
-        raise ErroApi(415, "TIPO_ARQUIVO_INVALIDO", "Envie uma imagem JPEG, PNG ou WebP.")
-    relativo = f"salas/{sala_id}/{uuid.uuid4()}.{ext}"
-    destino = caminho_absoluto(relativo)
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    temporario = destino.with_suffix(destino.suffix + ".tmp")
-    temporario.write_bytes(conteudo)
-    temporario.replace(destino)
-    return relativo
-
-
-def apagar_arquivo(relativo: str) -> None:
-    try:
-        caminho_absoluto(relativo).unlink(missing_ok=True)
-    except (OSError, ValueError):
-        log.warning("Não foi possível apagar o arquivo %s", relativo, exc_info=True)
-
-
-def apagar_pasta_sala(sala_id: int) -> None:
-    try:
-        pasta = caminho_absoluto(f"salas/{sala_id}")
-        shutil.rmtree(pasta, ignore_errors=True)
-    except ValueError:
-        pass

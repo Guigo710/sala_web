@@ -15,3 +15,5 @@ bcrypt>=4.1
 PyJWT>=2.8
 python-multipart>=0.0.9
 tzdata>=2024.1
+# Redução das fotos no upload (ADR-0010)
+Pillow>=11.0
