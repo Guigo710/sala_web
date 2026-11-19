@@ -63,16 +63,6 @@ class ConfigBanco(BaseSettings):
     DB_POOL_RECICLAR_S: int = Field(default=240, ge=1)
     DB_CONEXAO_TIMEOUT_S: int = Field(default=10, ge=1)
 
-    @property
-    def host_banco(self) -> str:
-        """Só o host da DATABASE_URL, para mensagens de erro (a URL tem a senha e nunca vai para o log)."""
-        from sqlalchemy.engine import make_url
-
-        try:
-            return make_url(self.DATABASE_URL).host or "(local)"
-        except Exception:  # noqa: BLE001
-            return "(DATABASE_URL inválida)"
-
 
 class Config(ConfigBanco):
     # HS256 pede chave de pelo menos 32 bytes (RFC 7518 §3.2); o PyJWT avisa abaixo disso.

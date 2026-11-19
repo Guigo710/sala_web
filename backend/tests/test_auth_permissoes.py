@@ -11,6 +11,7 @@ from app.core.config import obter_config
 from app.core.tempo import agora_tz
 from app.main import app
 from app.models import Professor, Sala
+from tests.apoio_imagens import png
 from tests.conftest import token_de
 
 # ---------------------------------------------------------------- matriz §5
@@ -63,7 +64,7 @@ ROTAS_PUBLICAS = [
     "/horarios", "/horarios/1", "/semestres", "/semestres/1", "/reservas?mes=2035-01",
 ]
 
-PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+PNG = png()  # imagem de verdade: o upload decodifica a foto (ADR-0010)
 
 
 def chamar(client, metodo, rota, corpo, headers=None, prof_id=None):

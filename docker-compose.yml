@@ -23,16 +23,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # Ticket 51: o backend roda como uid 10001 (sem root). Volume "uploads" criado por versões antigas (root)
-  # passa para esse dono aqui, uma vez por subida; volume novo já nasce certo e nada é alterado.
-  uploads-permissoes:
-    image: python:3.12-slim
-    user: root
-    command: ["sh", "-c", "find /app/uploads ! -user 10001 -exec chown 10001:10001 {} +"]
-    volumes:
-      - uploads:/app/uploads
-    restart: "no"
-
   backend:
     build:
       context: ./backend
@@ -40,16 +30,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      uploads-permissoes:
-        condition: service_completed_successfully
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sala_web}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sala_web}
+      # Fotos antigas, só lidas pela importação ao subir (ADR-0010). As fotos novas ficam no banco.
       UPLOAD_DIR: /app/uploads
+    # Sem PORT: o backend escuta em 8000 (no Render, na porta que ele definir; ADR-0009).
     ports:
       - "8000:8000"
     volumes:
-      - uploads:/app/uploads
+      # Só leitura: a API não grava mais em disco; a montagem só serve para importar as fotos antigas.
+      - uploads:/app/uploads:ro
 
   frontend:
     # Build de produção servido pelo nginx (ticket 42). VITE_* valem no build: mudou o .env,
@@ -67,4 +58,7 @@ services:
 
 volumes:
   pgdata:
+  # Fotos gravadas em disco até a rodada 4. Continua declarado para não apagar dados de ninguém: só serve para a
+  # importação (python -m app.importar_fotos, a cada subida do backend). Será retirado numa rodada futura; para
+  # liberar o espaço antes disso, veja backend/README.md ("Fotos antigas").
   uploads:

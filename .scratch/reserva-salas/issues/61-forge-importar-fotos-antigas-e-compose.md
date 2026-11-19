@@ -1,6 +1,6 @@
 # 61: Importar para o banco as fotos já gravadas em disco; Compose sem gravação em `uploads`
 
-Status: ready-for-agent
+Status: resolved
 Responsável: Forge
 Origem: Atlas
 Prioridade: alta
@@ -40,10 +40,34 @@ migration `0003` essas linhas ficam com `conteudo` nulo e a `url` responderia `4
 6. CI (job E2E): o passo "Subir a API" passa a rodar também `python -m app.importar_fotos` (deve ser no-op).
 
 ## Critérios de aceite
-- [ ] Atualização real com Compose: no commit anterior a esta rodada, subir, enviar 2 fotos (uma PNG), apagar à mão
+- [x] Atualização real com Compose: no commit anterior a esta rodada, subir, enviar 2 fotos (uma PNG), apagar à mão
       uma terceira do volume (linha órfã); trocar para o código novo e `docker compose up --build`:
       as 2 fotos aparecem na tela com `url` nova terminada em `.jpg`; a órfã gera `WARNING` e responde `404`; o log traz o resumo.
-- [ ] Segunda subida: nada é reimportado (resumo com zero importadas; mesmas URLs).
-- [ ] Clone novo (volume vazio) sobe sem erro e sem aviso.
-- [ ] `docker compose exec backend id` → uid 10001; `docker compose exec backend touch /app/uploads/x` falha (só leitura).
-- [ ] Teste pytest do comando com pasta temporária: importa, ignora ausente, não importa duas vezes, recusa `../`.
+- [x] Segunda subida: nada é reimportado (resumo com zero importadas; mesmas URLs).
+- [x] Clone novo (volume vazio) sobe sem erro e sem aviso.
+- [x] `docker compose exec backend id` → uid 10001; `docker compose exec backend touch /app/uploads/x` falha (só leitura).
+- [x] Teste pytest do comando com pasta temporária: importa, ignora ausente, não importa duas vezes, recusa `../`.
+
+## Resolução (Forge, rodada 5)
+- `backend/app/importar_fotos.py` (`python -m app.importar_fotos`): só `conteudo IS NULL`; caminho conferido por
+  `caminho_absoluto` (recusa `../`, absoluto e link para fora); mesma `preparar` do upload; nome novo `.jpg`; um commit
+  por foto; ausente/ilegível/inválida/fora da pasta → `WARNING` com id e nome; nunca apaga; sem pendentes ou sem pasta →
+  uma linha `INFO`; resumo final; `main()` sempre devolve 0 (até com o banco fora: loga e deixa a API tentar subir).
+- `Dockerfile`: `CMD` = `alembic upgrade head && python -m app.seed && python -m app.importar_fotos && exec uvicorn ...
+  --port ${PORT:-8000}`; `/app/uploads` continua como ponto de montagem (agora de root), usuário 10001.
+- `docker-compose.yml`: `uploads:/app/uploads:ro`, `uploads-permissoes` removido (e a dependência), volume `uploads`
+  mantido com comentário. Serviço `frontend` não tocado; volumes e projeto com os mesmos nomes.
+- `.env.example` (`UPLOAD_DIR`), `backend/README.md` (seção "Fotos antigas": conferir no log, liberar espaço com aviso
+  de irreversível e cópia opcional; seção do `chown` marcada como histórica), CI (passo "Subir a API" roda o comando).
+- Conferido de verdade com Docker: commit `f73d5ef` (antes da rodada) no ar com o projeto `sala_web`, 3 fotos enviadas
+  (PNG 2400×1800 com alfa, JPEG 3000×2000, JPEG pequeno) e o arquivo da terceira apagado do volume; código novo com
+  `docker compose up --build` no mesmo projeto: log `Foto 1 importada: ...png -> ...jpg`, `Foto 2 importada`, `WARNING`
+  da foto 3, resumo `2 importada(s), 1 não encontrada(s), 0 com erro`; as duas URLs novas `.jpg` → `200 image/jpeg`, a
+  órfã → `404`; arquivos antigos continuam no volume. Segunda subida: `0 importada(s)`, mesmas URLs.
+  Clone novo (projeto/volumes novos): sobe, só a linha `INFO ... nenhuma foto pendente`.
+  `exec backend id` → `uid=10001(app)`; `exec backend touch /app/uploads/x` → `Read-only file system`.
+  Observação: quem já tinha o container `uploads-permissoes` pode ver o aviso de órfão do Compose; o README manda
+  rodar `docker compose up -d --remove-orphans` uma vez.
+- Testes: `test_importar_fotos_antigas` (importa PNG e WebP, ignora ausente, recusa `../` e caminho absoluto, imagem
+  inválida, não apaga nada, segunda execução sem reimportar), silêncio sem pendentes/sem pasta, `main()` → 0, e o
+  comando real por `subprocess`.

@@ -1,15 +1,23 @@
 """Ticket 24: filtros de GET /salas, catálogo (equipamentos/softwares/horários/semestres) e upload de fotos."""
 
+import io
 import os
+import re
 from pathlib import Path
 
 import pytest
+from PIL import Image
+from sqlalchemy import func, select
 
 from app.core.config import obter_config
+from app.models import FotoSala
+from tests.apoio_imagens import jpeg, jpeg_com_tamanho, png, webp
 
-PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
-JPG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
-WEBP = b"RIFF\x00\x00\x00\x00WEBPVP8 " + b"\x00" * 64
+# Imagens de verdade (ADR-0010: o servidor decodifica e reduz; só a assinatura não basta mais).
+PNG = png()
+JPG = jpeg()
+WEBP = webp()
+NOME_PUBLICO = re.compile(r"^/uploads/salas/(\d+)/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$")
 
 
 def ids_salas(client, headers=None, **params):
@@ -172,21 +180,33 @@ def test_semestres_regras(client, admin, relogio, semestre_ref, professor, sala_
 
 # ---------------------------------------------------------------- upload de fotos
 def _arquivos_em_disco() -> set[Path]:
+    """Tudo o que existe em UPLOAD_DIR (desde a rodada 5 o upload não grava nada lá; ADR-0010)."""
     base = obter_config().upload_dir
-    return {p for p in base.rglob("*") if p.is_file()}
+    return {p for p in base.rglob("*")} if base.exists() else set()
+
+
+def _qtd_fotos(db) -> int:
+    db.rollback()  # enxerga o que a API acabou de gravar
+    return db.scalar(select(func.count()).select_from(FotoSala))
 
 
 def enviar(client, headers, sala_id, nome, conteudo, tipo="image/jpeg", **data):
     return client.post(f"/salas/{sala_id}/fotos", headers=headers, files={"arquivo": (nome, conteudo, tipo)}, data=data)
 
 
-@pytest.mark.parametrize(("conteudo", "ext"), [(JPG, "jpg"), (PNG, "png"), (WEBP, "webp")])
-def test_upload_formatos_aceitos_extensao_pelo_conteudo(client, admin, sala_id, conteudo, ext):
+@pytest.mark.parametrize(("conteudo", "cor"), [(JPG, (200, 40, 40)), (PNG, (40, 160, 40)), (WEBP, (40, 40, 200))])
+def test_upload_formatos_aceitos_pelo_conteudo(client, admin, sala_id, conteudo, cor):
+    """JPEG, PNG e WebP reconhecidos pelo conteúdo (nome .gif e tipo genérico não importam); todos viram JPEG."""
+    antes = _arquivos_em_disco()
     r = enviar(client, admin, sala_id, "foto.gif", conteudo, "application/octet-stream")
     assert r.status_code == 201, r.text
-    assert r.json()["url"].endswith(f".{ext}")
+    assert NOME_PUBLICO.match(r.json()["url"]) and r.json()["url"].startswith(f"/uploads/salas/{sala_id}/")
     servido = client.get(r.json()["url"])
-    assert servido.status_code == 200 and servido.content == conteudo
+    assert servido.status_code == 200 and servido.headers["content-type"] == "image/jpeg"
+    img = Image.open(io.BytesIO(servido.content))
+    assert img.format == "JPEG" and img.size == (32, 24)  # pequena: não é ampliada
+    assert all(abs(a - b) <= 12 for a, b in zip(img.convert("RGB").getpixel((16, 12)), cor, strict=True))
+    assert _arquivos_em_disco() == antes  # nada em disco
 
 
 @pytest.mark.parametrize(
@@ -199,41 +219,50 @@ def test_upload_formatos_aceitos_extensao_pelo_conteudo(client, admin, sala_id, 
         b"",
         b"\xff\xd8",  # JPEG truncado (assinatura incompleta)
         b"RIFF\x00\x00\x00\x00WAVEfmt ",  # RIFF que não é WebP
+        # assinatura certa, mas não pode ser lida como imagem (contrato 1.4 §4.4)
+        b"\xff\xd8\xff\xe0" + b"\x00" * 64,
+        b"\x89PNG\r\n\x1a\n" + b"\x00" * 64,
+        b"RIFF\x00\x00\x00\x00WEBPVP8 " + b"\x00" * 64,
+        JPG[: len(JPG) // 2],  # JPEG cortado no meio
+        b"\xff\xd8\xff\xe0<script>alert(1)</script>",
     ],
 )
-def test_upload_tipo_falso_415(client, admin, sala_id, conteudo):
-    antes = _arquivos_em_disco()
+def test_upload_tipo_falso_415(client, admin, sala_id, db, conteudo):
+    antes, fotos_antes = _arquivos_em_disco(), _qtd_fotos(db)
     r = enviar(client, admin, sala_id, "foto.jpg", conteudo, "image/jpeg")
     assert (r.status_code, r.json()["codigo"]) == (415, "TIPO_ARQUIVO_INVALIDO")
     assert _arquivos_em_disco() == antes
+    assert _qtd_fotos(db) == fotos_antes
 
 
-def test_upload_grande_413_nos_dois_caminhos(client, admin, sala_id):
+def test_upload_grande_413_nos_dois_caminhos(client, admin, sala_id, db):
     limite = obter_config().upload_max_bytes
     antes = _arquivos_em_disco()
     # um pouco acima do limite: passa pelo middleware (folga multipart) e é barrado na leitura em blocos
-    r = enviar(client, admin, sala_id, "g.jpg", JPG + b"0" * (limite - len(JPG) + 1))
+    r = enviar(client, admin, sala_id, "g.jpg", jpeg_com_tamanho(limite + 1))
     assert (r.status_code, r.json()["codigo"]) == (413, "ARQUIVO_GRANDE")
     # muito acima: barrado cedo pelo Content-Length
     r = enviar(client, admin, sala_id, "g.jpg", JPG + b"0" * (limite + 1024 * 1024))
     assert (r.status_code, r.json()["codigo"]) == (413, "ARQUIVO_GRANDE")
-    # exatamente no limite: aceito
-    r = enviar(client, admin, sala_id, "ok.jpg", JPG + b"0" * (limite - len(JPG)))
-    assert r.status_code == 201
-    assert len(_arquivos_em_disco() - antes) == 1
+    assert _qtd_fotos(db) == 0
+    # exatamente no limite: aceito (e guardado reduzido, bem menor)
+    r = enviar(client, admin, sala_id, "ok.jpg", jpeg_com_tamanho(limite))
+    assert r.status_code == 201, r.text
+    assert _qtd_fotos(db) == 1
+    assert len(client.get(r.json()["url"]).content) < 100 * 1024
+    assert _arquivos_em_disco() == antes
 
 
 @pytest.mark.parametrize("nome", ["../../x.jpg", "..\\..\\x.jpg", "/etc/passwd", "a/../../../b.jpg", "x.jpg\x00.sh", "....//....//x.jpg", "%2e%2e%2fx.jpg"])
 def test_upload_nome_malicioso_nao_escapa(client, admin, sala_id, nome):
     base = obter_config().upload_dir
+    antes = _arquivos_em_disco()
     r = enviar(client, admin, sala_id, nome, JPG)
     assert r.status_code == 201, r.text
     url = r.json()["url"]
-    assert url.startswith(f"/uploads/salas/{sala_id}/")
-    nome_disco = url.rsplit("/", 1)[1]
-    assert len(nome_disco) == 36 + 4 and nome_disco.endswith(".jpg")  # uuid4 + .jpg
-    caminho = (base / url.removeprefix("/uploads/")).resolve()
-    assert base in caminho.parents and caminho.is_file()
+    assert NOME_PUBLICO.match(url) and url.startswith(f"/uploads/salas/{sala_id}/")  # nome gerado: uuid4 + .jpg
+    assert client.get(url).status_code == 200
+    assert _arquivos_em_disco() == antes
     assert not (base.parent / "x.jpg").exists() and not Path("/tmp/x.jpg").exists()
 
 
@@ -250,13 +279,16 @@ def test_upload_legenda_e_professor(client, admin, professor, sala_id):
 
 def test_estaticos_nao_permitem_traversal(client, admin, sala_id):
     enviar(client, admin, sala_id, "a.jpg", JPG)
-    for caminho in ("/uploads/../app/main.py", "/uploads/%2e%2e/%2e%2e/etc/passwd", "/uploads/..%2f..%2fetc%2fpasswd", "/uploads/salas/"):
+    for caminho in (
+        "/uploads/../app/main.py", "/uploads/%2e%2e/%2e%2e/etc/passwd", "/uploads/..%2f..%2fetc%2fpasswd",
+        "/uploads/salas/", "/uploads/", "/uploads/salas/../../../../etc/passwd",
+    ):
         r = client.get(caminho)
         assert r.status_code == 404, (caminho, r.status_code)
         assert "import" not in r.text and "root:" not in r.text
 
 
-def test_galeria_ordem_capa_e_exclusao(client, admin, sala_id):
+def test_galeria_ordem_capa_e_exclusao(client, admin, sala_id, db):
     f1 = enviar(client, admin, sala_id, "1.jpg", JPG).json()
     f2 = enviar(client, admin, sala_id, "2.png", PNG, "image/png").json()
     assert (f1["ordem"], f2["ordem"]) == (1, 2)
@@ -270,9 +302,10 @@ def test_galeria_ordem_capa_e_exclusao(client, admin, sala_id):
     outra = client.get("/salas", params={"busca": "Laboratório 02"}).json()[0]["id"]
     assert client.patch(f"/salas/{outra}/fotos/{f1['id']}", headers=admin, json={"legenda": "x"}).status_code == 404
     assert client.patch(f"/salas/{sala_id}/fotos/{f1['id']}", headers=admin, json={"legenda": "Porta"}).json()["legenda"] == "Porta"
-    # excluir a sala apaga registros e arquivos
-    caminhos = [obter_config().upload_dir / f["url"].removeprefix("/uploads/") for f in (f1, f2)]
-    assert all(p.exists() for p in caminhos)
+    # excluir a sala apaga os registros (com o conteúdo): as URLs passam a responder 404
+    assert all(client.get(f["url"]).status_code == 200 for f in (f1, f2))
     assert client.delete(f"/salas/{sala_id}", headers=admin).status_code == 204
-    assert not any(p.exists() for p in caminhos)
-    assert os.path.isdir(obter_config().upload_dir)
+    for f in (f1, f2):
+        r = client.get(f["url"])
+        assert (r.status_code, r.json()["codigo"]) == (404, "NAO_ENCONTRADO")
+    assert _qtd_fotos(db) == 0
