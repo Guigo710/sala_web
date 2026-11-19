@@ -1,0 +1,46 @@
+# Blueprint do Render (opcional): cria a API do sala_web, igual à "Opção A" de docs/publicacao.md (ADR-0009).
+# Uso: Render → + New → Blueprint → repositório sala_web. O banco é o Neon (fora do Render).
+#
+# ESTE ARQUIVO É PÚBLICO: nenhum segredo aqui. Segredos usam "sync: false" (o Render pede o valor ao criar o
+# Blueprint e guarda só no painel) ou "generateValue: true" (o Render gera). Ticket 64.
+#
+# Não defina PORT (o Render define e a API escuta nela; ver backend/Dockerfile) nem UPLOAD_DIR (não há fotos
+# antigas na nuvem; ADR-0010).
+#
+# Referência dos campos: https://render.com/docs/blueprint-spec (esquema JSON: https://render.com/schema/render.yaml.json).
+# Se o painel acusar erro ao ler o arquivo, o formulário da Opção A do guia continua valendo.
+services:
+  - type: web
+    name: sala-web-api
+    runtime: docker
+    plan: free
+    region: virginia            # perto do Neon "AWS US East 1 (N. Virginia)"
+    branch: main
+    rootDir: backend            # só mudanças em backend/ geram deploy
+    dockerfilePath: ./Dockerfile  # relativo a rootDir: backend/Dockerfile
+    dockerContext: .              # relativo a rootDir: backend/
+    healthCheckPath: /saude     # 503 se o banco não responde: o deploy novo não entra no ar
+    autoDeploy: true            # cada merge no main publica
+    envVars:
+      # --- segredos e valores pessoais: o Render pede ao criar o Blueprint ---
+      - key: DATABASE_URL       # connection string do Neon com postgresql+psycopg:// e ?sslmode=require
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGENS       # endereço do site no Vercel, sem barra no fim (provisório: http://localhost:5173)
+        sync: false
+      - key: ADMIN_RM
+        sync: false
+      - key: ADMIN_SENHA        # apague no painel depois do primeiro login e da troca de senha
+        sync: false
+      # --- valores fixos, não secretos ---
+      - key: ADMIN_NOME
+        value: Administrador
+      - key: TZ
+        value: America/Sao_Paulo
+      - key: JWT_EXPIRA_MINUTOS
+        value: "480"
+      - key: UPLOAD_MAX_MB
+        value: "5"
+      - key: LOGIN_MAX_FALHAS_IP  # 0 no Render: todos chegam com o IP do balanceador (ADR-0009)
+        value: "0"

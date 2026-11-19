@@ -204,6 +204,89 @@ def test_concorrencia_recorrencias_que_disputam_uma_data_sao_atomicas(client, ad
     assert grupos == 1
 
 
+# ---------------------------------------------------------------- trava por sala (ticket 68)
+# Causa da falha intermitente de `test_concorrencia_mesmo_bloco_exatamente_um_sucesso` (500 ERRO_INTERNO, uma vez):
+# INSERTs simultâneos que se sobrepõem podem dar deadlock na restrição de exclusão (40P01, OperationalError, não
+# IntegrityError). A criação passou a pegar `pg_advisory_xact_lock` da sala antes de conferir os conflitos.
+def _em_segundo_plano(funcao):
+    resultado = {}
+
+    def alvo():
+        with TestClient(app) as c:
+            resultado["r"] = funcao(c)
+
+    t = threading.Thread(target=alvo, daemon=True)
+    t.start()
+    return t, resultado
+
+
+def _segurar_trava(sala):
+    from sqlalchemy import text
+
+    from app.core.db import engine
+    from app.services.reservas import CLASSE_TRAVA_SALA
+
+    conexao = engine.connect()
+    conexao.execute(text("SELECT pg_advisory_xact_lock(:c, :s)"), {"c": CLASSE_TRAVA_SALA, "s": sala})
+    return conexao
+
+
+def test_criacao_espera_a_trava_da_sala_e_depois_ve_a_reserva_de_quem_terminou_antes(
+    client, relogio, admin, professor, sala_id, aulas, db
+):
+    from sqlalchemy import text
+
+    m = aulas["manha"]
+    conexao = _segurar_trava(sala_id)
+    try:
+        t, res = _em_segundo_plano(
+            lambda c: c.post("/reservas", headers=professor, json={"sala_id": sala_id, "data": TERCA, "horario_ids": m[:2]})
+        )
+        t.join(1.0)
+        assert t.is_alive(), "a criação deveria esperar a trava da sala"
+        # Quem segura a trava grava uma reserva que se sobrepõe e confirma.
+        prof_id = db.scalar(select(Professor.id).where(Professor.rm == "prof01"))
+        conexao.execute(
+            text(
+                "INSERT INTO reservas (sala_id, professor_id, data, inicio, fim, horario_inicio_id, horario_fim_id,"
+                " quantidade_aulas, status, criado_por_id) VALUES (:s, :p, :d, '08:20', '09:10', :h, :h, 1, 'ativa', :p)"
+            ),
+            {"s": sala_id, "p": prof_id, "d": TERCA, "h": m[1]},
+        )
+        conexao.commit()
+    finally:
+        conexao.close()
+    t.join(10)
+    assert not t.is_alive()
+    r = res["r"]
+    assert r.status_code == 409, r.text
+    assert r.json()["codigo"] == "CONFLITO_RESERVA"
+    assert [(c["inicio"], c["fim"]) for c in r.json()["conflitos"]] == [("08:20", "09:10")]
+    assert total_reservas(db) == 1
+
+
+def test_trava_vale_so_para_a_propria_sala_e_para_a_recorrencia(client, relogio, admin, semestre_ref, sala_id, aulas):
+    m = aulas["manha"]
+    outra = next(s["id"] for s in client.get("/salas").json() if s["id"] != sala_id)
+    conexao = _segurar_trava(sala_id)
+    try:
+        # Outra sala não espera.
+        r = reservar(client, admin, outra, TERCA, m[:2])
+        assert r.status_code == 201, r.text
+        # A recorrente na sala travada espera.
+        serie = [(TERCA_REF + timedelta(weeks=k)).isoformat() for k in range(2)]
+        corpo = {"sala_id": sala_id, "data_inicio": serie[0], "horario_ids": m[:2], "datas": serie}
+        t, res = _em_segundo_plano(lambda c: c.post("/reservas/recorrentes", headers=admin, json=corpo))
+        t.join(1.0)
+        assert t.is_alive(), "a confirmação da recorrência deveria esperar a trava da sala"
+        conexao.rollback()
+    finally:
+        conexao.close()
+    t.join(10)
+    assert not t.is_alive()
+    assert res["r"].status_code == 201, res["r"].text
+
+
 # ---------------------------------------------------------------- RN03 aulas seguidas (via API)
 @pytest.mark.parametrize(
     ("montar", "data", "status", "codigo"),

@@ -1,14 +1,15 @@
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from alembic import context
 from app.core.config import obter_config_banco
 from app.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Não desliga os loggers já existentes (sala_web.*) quando as migrations rodam no mesmo processo (testes).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # URL vem do ambiente (DATABASE_URL), a menos que já tenha sido definida (ex.: testes).
 if not config.get_main_option("sqlalchemy.url"):

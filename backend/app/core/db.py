@@ -46,6 +46,8 @@ def criar_engine(config: ConfigBanco) -> Engine:
         pool_pre_ping=True,
         pool_timeout=30,
         connect_args={"connect_timeout": config.DB_CONEXAO_TIMEOUT_S, "application_name": NOME_APLICACAO},
+        # Erros do banco no log sem os valores da consulta (hash de senha, textos digitados; ticket 68).
+        hide_parameters=True,
     )
     instalar_fuso(engine, config.TZ)
     return engine

@@ -95,6 +95,8 @@ Se algum pedir nome de time/organização, pode usar seu nome ou "sala-web".
    - Se não houver `?sslmode=require` no fim, acrescente `?sslmode=require`. A conexão do Neon **exige SSL**.
    - Confira que o endereço (a parte depois do `@`) **não** tem a palavra `-pooler`. Se tiver, volte ao passo 3 e
      desligue **Connection pooling**.
+   - Se esquecer de trocar o começo, a API troca sozinha (aceita `postgresql://` e `postgres://`); mas faça a troca
+     mesmo assim, para o valor anotado ficar igual ao deste guia.
 6. Isto é a **informação A** (segredo). Anote.
 
 Você **não** precisa criar tabelas: a API cria tudo sozinha na primeira vez que subir.
@@ -103,8 +105,9 @@ Você **não** precisa criar tabelas: a API cria tudo sozinha na primeira vez qu
 
 ## 3. Criar a API no Render
 
-Há duas formas. Use a **opção A** (formulário). A **opção B** (Blueprint) só vale se existir um arquivo
-`render.yaml` na raiz do repositório no GitHub.
+Há duas formas. Use a **opção A** (formulário): é a recomendada. A **opção B** (Blueprint) usa o arquivo
+`render.yaml` da raiz do repositório, que ainda **não foi conferido** na documentação oficial do Render. Se a opção B
+der qualquer erro, vale a opção A (veja o fim da opção B).
 
 ### Antes: escolher a senha inicial do admin (informação B)
 Invente uma senha com **pelo menos 12 caracteres** (letras, números e símbolos). Ela só serve para o primeiro
@@ -173,6 +176,12 @@ login; você vai trocá-la logo depois. Anote.
    `ADMIN_SENHA` (informação B), `CORS_ORIGENS` (`http://localhost:5173` por enquanto). O `JWT_SECRET` é gerado sozinho.
 5. Clique em **Apply** (ou **Deploy Blueprint**). Depois siga os passos 7 a 9 da opção A.
 
+**Se a opção B der erro** (o painel acusa erro ao ler o `render.yaml`, ou o primeiro deploy falha nos **Logs**
+dizendo que não achou o `Dockerfile`), não tente consertar o arquivo: apague o que foi criado (serviço
+`sala-web-api` → **Settings** → no fim da página, **Delete Web Service**; e o Blueprint, em **Blueprints** →
+`sala-web` → **Settings** → **Delete Blueprint**) e faça a **opção A**. Apagar antes evita que o endereço novo
+ganhe letras a mais (`sala-web-api-xxxx.onrender.com`).
+
 ---
 
 ## 4. Criar o site no Vercel
@@ -232,9 +241,12 @@ A API só aceita pedidos vindos dos endereços listados em `CORS_ORIGENS`.
 1. Abra a **informação D** (o site no Vercel). Se a API estava dormindo, aparece o aviso de servidor acordando;
    espere até 1 minuto.
 2. Clique em **Entrar**. RM: `admin` (o `ADMIN_RM`), senha: a **informação B**.
-3. Troque a senha agora: menu **Minha conta** → troca de senha. Use uma senha nova e forte, só sua.
+3. Troque a senha agora: no topo, à direita, clique no seu nome (**Administrador**, com o selo **admin**); abre a
+   página **Minha conta**. Na parte **Trocar senha**, digite a senha atual (informação B) e a nova, e clique em
+   **Trocar senha**. Use uma senha nova e forte, só sua (mínimo de 8 caracteres).
 4. Volte ao Render → **Environment** → apague a variável `ADMIN_SENHA` (ícone de lixeira) → **Save, rebuild, and deploy**.
-   Ela só servia para criar o admin na primeira vez.
+   Ela só servia para criar o admin na primeira vez. Daí em diante os **Logs** mostram, a cada subida, o aviso
+   `ADMIN_RM/ADMIN_SENHA não definidos: admin inicial não criado.`: é esperado e não é erro.
 5. Recomendado: no painel de admin, crie uma **segunda conta de admin** para outra pessoa do grupo. Se alguém
    esquecer a senha, o outro admin redefine.
 6. O sistema começa com dados genéricos (ambientes, grade de horários, semestres de exemplo). Ajuste pelo painel de
@@ -254,6 +266,13 @@ Marque cada item:
       a foto **continua aparecendo** (prova de que está guardada no banco, não no disco do Render).
 - [ ] Abrir o site direto num endereço interno, como `https://SEU-SITE.vercel.app/agenda`, funciona (não dá 404).
 - [ ] Uma reserva de teste é criada e cancelada pelo admin.
+- [ ] Cabeçalhos de segurança do site: no Chrome ou Edge, abra o site, aperte **F12** → aba **Network** (Rede) →
+      recarregue a página (F5) → clique na primeira linha (o endereço do site) → **Headers** (Cabeçalhos) →
+      **Response Headers**: deve haver `content-security-policy` (com `frame-ancestors 'none'`),
+      `x-frame-options: DENY` e `x-content-type-options: nosniff`. Na aba **Console** não deve haver erros
+      vermelhos falando de "Content Security Policy".
+- [ ] Uma implantação de **prévia** (de um branch que não é o `main`) abre, mas mostra erro de conexão com o
+      servidor: é o esperado (seção 8).
 
 Problemas? Veja a próxima seção ou abra um ticket para o grupo.
 
@@ -288,12 +307,15 @@ Não há nada a fazer nos painéis no dia a dia:
 | Site carrega, mas mostra "Não foi possível conectar ao servidor" | `CORS_ORIGENS` diferente do endereço do site, ou `VITE_API_URL` errada | Confira o passo 5 (sem barra no fim, `https://`). Confira `VITE_API_URL` no Vercel; se mudou, faça **Redeploy**. Confira se `/saude` da API abre. |
 | Site demora quase 1 minuto na primeira vez | API dormindo (normal no plano grátis) | Espere. Não use serviços de "ping" para mantê-la acordada: gastam as horas grátis do Render e do Neon. |
 | Deploy no Render falha; nos Logs aparece `JWT_SECRET` | Segredo curto ou o de exemplo | Gere outro (passo 3, item 4) com 32+ caracteres. |
-| Logs com `psycopg2` ou `Can't load plugin` | `DATABASE_URL` começando com `postgresql://` | Troque o começo por `postgresql+psycopg://` (passo 2, item 5). |
+| Logs com `Can't load plugin` ou `Could not parse SQLAlchemy URL` | `DATABASE_URL` incompleta (não começa com `postgres`) | Copie de novo no Neon (passo 2) e cole a linha inteira. |
+| Deploy no Render falha dizendo que não achou o `Dockerfile` | Pasta do Dockerfile | Render → serviço → **Settings** → **Build & Deploy**: **Root Directory** = `backend`. Se o campo **Dockerfile Path** não mostrar `backend/` antes do valor, use `backend/Dockerfile` e **Docker Build Context Directory** = `backend`; se mostrar, use `./Dockerfile` e `.`. Salve e faça **Manual Deploy**. |
+| Montagem no Vercel falha com `VITE_API_URL` nos **Build Logs** | Variável vazia, sem `https://` ou com espaço | Corrija em **Settings → Environment Variables** (ex.: `https://sala-web-api.onrender.com`) e faça **Redeploy**. |
 | Logs com `SSL`, `password authentication failed` ou `could not translate host name` | Endereço do banco copiado incompleto ou senha errada | Copie de novo no Neon (botão **Connect**) e refaça a troca do começo. |
 | Logs com `CORS_ORIGENS` e a API não sobe | Valor com caminho (ex.: `/agenda`) ou `*` | Use só `https://endereco.vercel.app`. |
 | `/saude` mostra `{"status":"erro"}` | A API não alcança o banco | Confira `DATABASE_URL`; no Neon, veja se o projeto está ativo e dentro dos limites. |
 | Página em branco ou 404 ao abrir `/agenda` direto | Configuração do Vercel | Confira **Root Directory** = `frontend` e **Output Directory** = `dist`. Avise o grupo (arquivo `frontend/vercel.json`). |
 | "Muitas tentativas" no login | 5 senhas erradas para o mesmo RM | Espere 5 minutos. |
+| Esqueci a senha e não há outro admin | A API nunca altera uma conta que já existe | Render → **Environment**: troque `ADMIN_RM` para um RM novo (ex.: `admin2`) e crie de novo `ADMIN_SENHA` com uma senha provisória → **Save, rebuild, and deploy**. Entre com `admin2`, redefina a senha da conta antiga (**Admin** → **Professores** → **Redefinir senha** na linha dela) e depois apague `ADMIN_SENHA` de novo. |
 | Uma foto aparece como "Foto indisponível" | Foto antiga que não foi encontrada ao passar para o banco | Exclua a foto e envie de novo pelo admin. |
 
 Onde olhar: Render → serviço → **Logs**; Vercel → projeto → **Deployments** → clique na implantação → **Build Logs**.

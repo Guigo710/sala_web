@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger("sala_web")
@@ -150,6 +150,21 @@ def registrar_handlers(app: FastAPI) -> None:
             detail = f"Dados inválidos: {erros[0]['campo']} {erros[0]['mensagem']}."
         return JSONResponse(
             status_code=422, content={"detail": detail, "codigo": "VALIDACAO", "erros": erros}
+        )
+
+    @app.exception_handler(DataError)
+    async def _valor_recusado_pelo_banco(request: Request, exc: DataError) -> JSONResponse:
+        # Valor que passou pelo schema, mas o Postgres não aceita: id além do `integer` (`/salas/99999999999`),
+        # texto com o caractere NUL (`?busca=%00`)... É erro de quem chamou, não 500 (ticket 68). O log não traz o
+        # SQL nem os valores.
+        log.warning("Valor recusado pelo banco em %s %s (%s)", request.method, request.url.path, type(exc.orig).__name__)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": "Dados inválidos: valor fora do permitido.",
+                "codigo": "VALIDACAO",
+                "erros": [{"campo": "requisicao", "mensagem": "número grande demais ou caractere inválido"}],
+            },
         )
 
     @app.exception_handler(StarletteHTTPException)

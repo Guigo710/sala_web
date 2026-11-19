@@ -51,7 +51,7 @@ def test_migration_0002_sobe_e_desce_com_dados(db):
     cfg.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"].replace("%", "%%"))
     db.close()
     try:
-        command.downgrade(cfg, "-1")
+        command.downgrade(cfg, "0001")  # desce a 0002 (e a 0003, que vem depois dela)
         with db.bind.connect() as conn:
             colunas = conn.scalars(
                 text("SELECT column_name FROM information_schema.columns WHERE table_name = 'professores'")
