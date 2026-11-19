@@ -95,6 +95,8 @@ def entregar(db: Session, arquivo: str, if_none_match: str | None = None) -> Ent
     Não existe, ou sem `conteudo` (foto antiga não importada) → 404. `If-None-Match` igual → `Entrega` sem
     bytes (`304`), sem ler o conteúdo do banco.
     """
+    if "\x00" in arquivo:  # o Postgres recusa NUL em texto; nenhum nome guardado tem esse caractere
+        raise nao_encontrado("Foto não encontrada.")
     etag = etag_de(arquivo)
     if _bate_com(if_none_match, etag):
         existe = db.scalar(select(FotoSala.id).where(FotoSala.arquivo == arquivo, FotoSala.conteudo.is_not(None)))

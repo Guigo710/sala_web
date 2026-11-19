@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, time
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager
 
@@ -18,6 +18,21 @@ from app.services.aulas import validar_bloco
 from app.services.comum import obter_ou_404
 
 CONSTRAINT_CONFLITO = "ex_reservas_sem_sobreposicao"
+
+# Classe do advisory lock de criação de reservas (1º argumento de pg_advisory_xact_lock(int, int)); o 2º é a sala.
+CLASSE_TRAVA_SALA = 0x5A1A
+
+
+def travar_sala(db: Session, sala_id: int) -> None:
+    """Uma criação de reserva por vez em cada sala, até o fim da transação (commit ou rollback).
+
+    Sem isto, INSERTs simultâneos que se sobrepõem podem dar *deadlock* na restrição de exclusão: cada um grava a
+    entrada no índice GiST e depois espera a transação do outro ao conferir (SQLSTATE 40P01, que não é
+    IntegrityError e virava 500 ERRO_INTERNO; visto uma vez no teste de concorrência, ticket 68). Com a trava, a
+    checagem `buscar_conflitos` feita em seguida já enxerga a reserva de quem terminou antes e responde 409; a
+    restrição de exclusão continua como garantia final (ADR-0003). Reservas de salas diferentes não se esperam.
+    """
+    db.execute(select(func.pg_advisory_xact_lock(CLASSE_TRAVA_SALA, sala_id)))
 
 
 @dataclass
@@ -124,6 +139,7 @@ def criar_avulsa(
 ) -> Reserva:
     bloco = preparar_bloco(db, usuario, sala_id, data, horario_ids, professor_id)
 
+    travar_sala(db, bloco.sala.id)
     conflitos = buscar_conflitos(db, bloco.sala.id, [data], bloco.inicio, bloco.fim)
     if conflitos:
         raise erro_conflito(conflitos)

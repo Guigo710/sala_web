@@ -66,6 +66,15 @@ export default function cspVercel({ ambiente = process.env } = {}) {
       if (!ambiente.VERCEL) return;
       // config.env tem as VITE_* do ambiente e dos arquivos .env, como o Vite as grava no JavaScript.
       origemApi = origemDaApi(config.env.VITE_API_URL);
+      // O site do Vercel é https: uma API em http seria bloqueada (conteúdo misto e `connect-src ... https:` do
+      // cabeçalho). Melhor falhar o build com a explicação do que publicar um site que não fala com a API (ticket 68).
+      if (!origemApi.startsWith('https://')) {
+        throw new Error(
+          `VITE_API_URL precisa começar com https:// no Vercel (recebido '${config.env.VITE_API_URL}'). Copie o ` +
+            'endereço da API do topo da página do serviço no Render (https://nome-da-api.onrender.com) e refaça a ' +
+            'implantação (docs/publicacao.md, passo 4).',
+        );
+      }
       config.logger.info(`[csp-vercel] CSP do Vercel: img-src/connect-src 'self' ${origemApi}`);
     },
     transformIndexHtml: {

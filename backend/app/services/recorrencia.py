@@ -20,6 +20,7 @@ from app.services.reservas import (
     nova_reserva,
     preparar_bloco,
     reservas_do_grupo,
+    travar_sala,
 )
 
 
@@ -96,6 +97,7 @@ def confirmar(
         )
 
     datas = sorted(entrada.datas)
+    travar_sala(db, bloco.sala.id)
     conflitos = buscar_conflitos(db, bloco.sala.id, datas, bloco.inicio, bloco.fim)
     if conflitos:
         raise erro_conflito(conflitos)
