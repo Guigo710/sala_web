@@ -1,6 +1,7 @@
 """Galeria de fotos de um ambiente (contrato §4.4). As fotos ficam no banco, já reduzidas (ADR-0010)."""
 
 import uuid
+from dataclasses import dataclass
 from typing import BinaryIO
 
 from sqlalchemy import func, select
@@ -65,17 +66,47 @@ def enviar(db: Session, sala_id: int, admin: Professor, arquivo: BinaryIO, legen
     return foto
 
 
-def obter_conteudo(db: Session, arquivo: str) -> tuple[bytes, str] | None:
-    """(bytes, tipo MIME) da foto com esse nome público; `None` se não existe ou ainda não tem conteúdo.
+@dataclass(frozen=True)
+class Entrega:
+    """Resposta de `GET /uploads/{arquivo}`: `conteudo` None = `304` (o cliente já tem esta versão)."""
 
-    Consulta só as duas colunas (não carrega a sala nem a linha inteira).
+    etag: str
+    conteudo: bytes | None = None
+    tipo_mime: str = imagens.TIPO_MIME
+
+
+def etag_de(arquivo: str) -> str:
+    """ETag forte com o UUID do nome (`salas/3/<uuid>.jpg` → `"<uuid>"`): o conteúdo de um nome nunca muda."""
+    return '"' + arquivo.rsplit("/", 1)[-1].rsplit(".", 1)[0] + '"'
+
+
+def _bate_com(if_none_match: str | None, etag: str) -> bool:
+    """`If-None-Match` com o mesmo ETag (aceita lista, `W/` e `*`)."""
+    for item in (if_none_match or "").split(","):
+        item = item.strip()
+        if item and (item == "*" or item.removeprefix("W/") == etag):
+            return True
+    return False
+
+
+def entregar(db: Session, arquivo: str, if_none_match: str | None = None) -> Entrega:
+    """Foto pelo nome público (contrato §4.1). Lê só as colunas necessárias, sem a sala.
+
+    Não existe, ou sem `conteudo` (foto antiga não importada) → 404. `If-None-Match` igual → `Entrega` sem
+    bytes (`304`), sem ler o conteúdo do banco.
     """
-    linha = db.execute(
-        select(FotoSala.conteudo, FotoSala.tipo_mime).where(FotoSala.arquivo == arquivo)
-    ).first()
+    if "\x00" in arquivo:  # o Postgres recusa NUL em texto; nenhum nome guardado tem esse caractere
+        raise nao_encontrado("Foto não encontrada.")
+    etag = etag_de(arquivo)
+    if _bate_com(if_none_match, etag):
+        existe = db.scalar(select(FotoSala.id).where(FotoSala.arquivo == arquivo, FotoSala.conteudo.is_not(None)))
+        if existe is None:
+            raise nao_encontrado("Foto não encontrada.")
+        return Entrega(etag=etag)
+    linha = db.execute(select(FotoSala.conteudo, FotoSala.tipo_mime).where(FotoSala.arquivo == arquivo)).first()
     if linha is None or linha.conteudo is None:
-        return None
-    return linha.conteudo, linha.tipo_mime or imagens.TIPO_MIME
+        raise nao_encontrado("Foto não encontrada.")
+    return Entrega(etag=etag, conteudo=linha.conteudo, tipo_mime=linha.tipo_mime or imagens.TIPO_MIME)
 
 
 def reordenar(db: Session, sala_id: int, admin: Professor, foto_ids: list[int]) -> list[FotoSala]:

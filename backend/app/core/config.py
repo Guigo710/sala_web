@@ -52,7 +52,10 @@ def normalizar_origens(texto: str) -> list[str]:
 class ConfigBanco(BaseSettings):
     """Só o necessário para conectar ao banco (usado também pelo Alembic)."""
 
-    model_config = SettingsConfigDict(env_file=_ARQUIVOS_ENV, env_file_encoding="utf-8", extra="ignore")
+    # hide_input_in_errors: um valor recusado (ex.: JWT_SECRET curto, DATABASE_URL) não aparece no log do Render.
+    model_config = SettingsConfigDict(
+        env_file=_ARQUIVOS_ENV, env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+    )
 
     DATABASE_URL: str
     TZ: str = "America/Sao_Paulo"
@@ -63,15 +66,16 @@ class ConfigBanco(BaseSettings):
     DB_POOL_RECICLAR_S: int = Field(default=240, ge=1)
     DB_CONEXAO_TIMEOUT_S: int = Field(default=10, ge=1)
 
-    @property
-    def host_banco(self) -> str:
-        """Só o host da DATABASE_URL, para mensagens de erro (a URL tem a senha e nunca vai para o log)."""
-        from sqlalchemy.engine import make_url
-
-        try:
-            return make_url(self.DATABASE_URL).host or "(local)"
-        except Exception:  # noqa: BLE001
-            return "(DATABASE_URL inválida)"
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _driver_psycopg(cls, valor: str) -> str:
+        """A connection string copiada do Neon começa com `postgresql://` (ou `postgres://`), que o SQLAlchemy
+        entenderia como psycopg2 (não instalado). Troca só o esquema pelo driver do projeto (ticket 68)."""
+        url = valor.strip()
+        for esquema in ("postgresql://", "postgres://"):
+            if url.startswith(esquema):
+                return "postgresql+psycopg://" + url[len(esquema) :]
+        return url
 
 
 class Config(ConfigBanco):

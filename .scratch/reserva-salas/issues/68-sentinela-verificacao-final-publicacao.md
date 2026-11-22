@@ -1,6 +1,6 @@
 # 68: Verificação final da rodada 5 (fotos no banco, publicação Vercel + Render + Neon)
 
-Status: ready-for-agent
+Status: resolved (com tickets 70 e 71 abertos)
 Responsável: Sentinela
 Origem: Atlas
 Prioridade: alta
@@ -56,3 +56,69 @@ Referências: ADR-0009, ADR-0010, ADR-0007 (adendos); contrato 1.4; `docs/public
 - [ ] Achados abertos como tickets ao responsável (Forge/Pixel) ou ao Atlas (guia/contrato).
 - [ ] Lista de conferência do item 6 comparada com a seção 7 ("Conferência final") de `docs/publicacao.md`;
       itens faltando ou errados vão em ticket `Responsável: Atlas` (o guia é do Atlas).
+
+## Resolução (Sentinela, rodada 5)
+
+### Suítes
+- Backend: `405 passed` (365 antes + 2 da trava por sala + 38 em `tests/test_sentinela_rodada5.py`), Postgres 16 real.
+- Frontend: Vitest `93 passed` (13 arquivos), `npm run lint` ok, `npm run build` ok (sem VERCEL mantém `__CSP_NONCE__`).
+- E2E (Playwright) contra o ambiente "de produção" abaixo: `10 passed` (9 antigos + 1 novo em `e2e/csp.spec.js`).
+
+### Teste instável (`test_concorrencia_mesmo_bloco_exatamente_um_sucesso`)
+- Causa achada no log do Postgres (19/11 11:47): 7 × `deadlock detected ... while checking exclusion constraint on
+  tuple (0,1) in relation "reservas"`, entre os 8 INSERTs do teste. Na restrição de exclusão, dois INSERTs que se
+  sobrepõem gravam a entrada no índice GiST e depois cada um espera a transação do outro. O erro é `40P01`
+  (`OperationalError`, não `IntegrityError`) e virava `500 ERRO_INTERNO`. Reproduzido de forma determinística
+  direto no banco (duas transações com duas linhas em ordem cruzada → `DeadlockDetected sqlstate=40P01`).
+- Antes da correção: 30/30 isolado, 3/3 no arquivo e 500 rodadas de estresse (8 POST simultâneos cada, com e sem
+  CPU saturada) passaram, sem deadlock: a janela é rara, mas real (o pool 5+5 não tem relação).
+- Correção: `travar_sala` (`pg_advisory_xact_lock(0x5A1A, sala_id)`) antes de `buscar_conflitos` em
+  `reservas.criar_avulsa` e `recorrencia.confirmar`. Testes novos determinísticos (falham sem a trava): a criação
+  espera a trava e depois responde 409 com o conflito de quem terminou antes; outra sala não espera; a recorrente espera.
+- Depois: 30/30 isolado, 30/30 no arquivo (41 testes), 0 deadlocks no log.
+
+### Ambiente "de produção" (sem contas externas)
+- Postgres 16 em container **só com SSL** (`hostnossl ... reject`, certificado autoassinado), usuário `neondb_owner`;
+  `DATABASE_URL=...?sslmode=require&channel_binding=require`; `pg_stat_ssl`: `sala_web | t | TLSv1.3`.
+- Imagem do backend (Dockerfile do repo; só o `pip install` recebeu o CA do proxy da sessão), `PORT=10000`,
+  `LOGIN_MAX_FALHAS_IP=0`, `CORS_ORIGENS=https://localhost:4443/` (barra final aceita), uid 10001: migrations, seed,
+  importação (no-op) e `Uvicorn running on http://0.0.0.0:10000`; segunda subida sem reimportar.
+- "Render": TLS em `https://localhost:8443` → API; "Vercel": `VERCEL=1 VITE_API_URL=https://localhost:8443` +
+  servidor HTTPS que aplica o `vercel.json` (arquivos primeiro, depois `rewrites`; `headers` por `source`).
+  `/agenda`, `/ambientes/3`, `/admin/ambientes` → 200; `/src/main.jsx`, `/assets/nao-existe.js`, `/.env` → 404;
+  cabeçalhos e CSP presentes; `/assets/*` com cache imutável.
+- Foto de 2400×1800 RGBA enviada pelo E2E: JPEG 1600×1200 sem APP1, `ETag`, `Cache-Control` imutável, CSP
+  `sandbox`, `nosniff`, `304` com `If-None-Match`; exibida no site sem violação de CSP. Foto continua servida
+  depois de trocar o container da API (prova de que está no banco).
+- Banco reiniciado com a API no ar → próximas 8 requisições 200; banco parado → `/saude` 503 em 0,01 s
+  (conexão recusada); nenhum log com a senha do banco, do admin ou o `JWT_SECRET`.
+
+### Segurança
+- Upload: 4000×3000 orientação 6 com GPS/comentário → 1200×1600 sem EXIF/GPS/comentário; nome enviado
+  (`../../../etc/passwd.jpg`) descartado; 41 MP, bomba de 400 MP (1,2 MB), SOF de JPEG 65000×65000 → 413;
+  IHDR 2^31 → 415; SVG, HTML, HTML com assinatura JPEG, GIF, TIFF, BMP, WebP falso → 415; poliglota PNG+ZIP
+  recodificado (ZIP some); > 5 MB → 413.
+- `/uploads`: `../`, `%2e%2e`, `..%2f`, nomes enormes, CRLF → 404 envelope sem cabeçalhos de foto; CORS só para a
+  origem do site; sem CORP; POST/DELETE → 405.
+- `CORS_ORIGENS`: preflight do site aceito, outra origem e origem parecida recusadas; `*` e caminho impedem subir.
+- `render.yaml`, `vercel.json`, `.env.example`: sem segredo real; `.gitignore` cobre `.env*`; `FORWARDED_ALLOW_IPS`
+  nunca `*`.
+- Corrigido direto: `NUL` em texto e ids além do `integer` davam `500` (ex.: `/salas/99999999999`,
+  `/salas?busca=%00`, login com `\u0000` no RM, `/uploads/...%00.jpg`) → agora `422 VALIDACAO` (handler de
+  `DataError`) e `404` em `/uploads`; `hide_parameters=True` no engine (log de erro do banco sem valores);
+  `hide_input_in_errors=True` na config (um `JWT_SECRET` curto aparecia inteiro no log do Render);
+  `DATABASE_URL` copiada do Neon com `postgresql://`/`postgres://` passa a funcionar; build do Vercel recusa
+  `VITE_API_URL` em `http://`.
+- Aberto: ticket 70 (PNG/WebP perto de 40 MP chega a 577 MB de pico; Render Free tem 512 MB).
+
+### Guia (`docs/publicacao.md`)
+Corrigido: troca de senha (o link é o nome do usuário no topo, página "Minha conta" → "Trocar senha"); aviso
+esperado no log depois de apagar `ADMIN_SENHA`; opção A como recomendada e o que fazer se o Blueprint der erro
+(apagar serviço e Blueprint e usar o formulário); Dockerfile não encontrado (as duas leituras do campo);
+`VITE_API_URL` errada no build do Vercel; recuperação quando o único admin esquece a senha (`ADMIN_RM` novo);
+`postgresql://` agora aceito; conferência final com cabeçalhos/CSP pelo F12 e a prévia sem API.
+Pendente (ticket 71, Atlas): conferir `render.yaml` na documentação oficial; registrar no contrato/ADR-0003.
+
+### Compose (item 2)
+Não refeito nesta verificação: a atualização com fotos antigas (PNG e órfã), a segunda subida e o volume `:ro`
+foram conferidos com Docker pelo Forge no ticket 61, com saídas no próprio ticket.

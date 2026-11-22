@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.main import app
+from tests.apoio_imagens import jpeg
 from tests.conftest import proximo_dia_semana
 
 
@@ -261,7 +262,7 @@ def test_upload_foto(client, admin, sala_id):
     r = client.post(
         f"/salas/{sala_id}/fotos",
         headers=admin,
-        files={"arquivo": ("../../evil.jpg", b"\xff\xd8\xff\xe0" + b"0" * 64, "image/jpeg")},
+        files={"arquivo": ("../../evil.jpg", jpeg(), "image/jpeg")},
         data={"legenda": "Vista da porta"},
     )
     assert r.status_code == 201, r.text

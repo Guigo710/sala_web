@@ -1,6 +1,6 @@
 # 64: `render.yaml` (Blueprint, opcional) e documentação de publicação do backend
 
-Status: ready-for-agent
+Status: ready-for-human (código pronto; falta conferir o render.yaml na documentação oficial do Render, ver Resolução)
 Responsável: Forge
 Origem: Atlas
 Prioridade: média (opcional: o guia funciona sem Blueprint)
@@ -31,6 +31,27 @@ público (está no repositório): **nenhum segredo** nele.
 4. `.env.example`: bloco comentado "Produção (Render)" com os nomes e um lembrete de que os valores ficam só no painel.
 
 ## Critérios de aceite
-- [ ] `render.yaml` sem nenhum valor secreto (revisão do Sentinela no ticket 68).
-- [ ] YAML válido e com os campos conferidos na documentação oficial (link da página consultada nos comentários do ticket).
-- [ ] `backend/README.md` e `.env.example` atualizados; nomes de variáveis iguais aos do guia.
+- [x] `render.yaml` sem nenhum valor secreto (revisão do Sentinela no ticket 68).
+- [ ] (parcial: YAML válido; conferência na documentação oficial pendente, ver Resolução) YAML válido e com os campos conferidos na documentação oficial (link da página consultada nos comentários do ticket).
+- [x] `backend/README.md` e `.env.example` atualizados; nomes de variáveis iguais aos do guia.
+
+## Resolução (Forge, rodada 5)
+- `render.yaml` na raiz, exatamente com os campos e variáveis pedidos (`sync: false` para `DATABASE_URL`,
+  `CORS_ORIGENS`, `ADMIN_RM`, `ADMIN_SENHA`; `generateValue: true` para `JWT_SECRET`; valores fixos como texto;
+  sem `PORT` nem `UPLOAD_DIR`). Nenhum valor secreto.
+- YAML válido (lido com `yaml.safe_load` em `test_render_yaml_sem_segredos_e_com_os_campos_do_guia`, que também
+  confere que `rootDir` + `dockerfilePath` apontam para `backend/Dockerfile`, que nenhum segredo tem `value` e que
+  todos os nomes existem no `Config` da API).
+- **Pendente (critério 2): conferência na documentação oficial.** Esta sessão não tem acesso a `render.com`
+  (bloqueado pela rede); o esquema JSON oficial (`https://render.com/schema/render.yaml.json`, listado no SchemaStore)
+  também fica nesse domínio, e não encontrei cópia dele no GitHub. Páginas a conferir:
+  https://render.com/docs/blueprint-spec. Pontos que merecem atenção do Atlas/Sentinela:
+  - `dockerfilePath`/`dockerContext` foram escritos **relativos a `rootDir`** (como no formulário e no guia). Se o
+    Render os interpretar relativos à raiz do repositório, o certo seria `./backend/Dockerfile` e `./backend`;
+  - `autoDeploy: true` pode ter sido substituído por `autoDeployTrigger` (`commit`/`checksPass`/`off`) em versões
+    recentes da especificação; com `checksPass` o Render só publicaria depois do CI verde.
+  O validador do painel do Render (ao ler o Blueprint) ou o esquema JSON podem entrar no CI quando o domínio estiver
+  liberado. A opção A do guia não depende deste arquivo.
+- `backend/README.md`: seção "Publicação (Render + Neon)" com a tabela das variáveis (nome, uso, segredo), mais
+  "Fotos", "Fotos antigas" e "Mudanças da rodada 5 para quem já roda localmente". `.env.example`: bloco
+  "Produção (Render)" com os mesmos nomes do guia e o lembrete de que os valores ficam só no painel.

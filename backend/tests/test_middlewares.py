@@ -9,10 +9,11 @@ from fastapi.testclient import TestClient
 from app.core import middlewares
 from app.core.config import obter_config
 from app.main import LIMITE_CORPO_PADRAO, app
+from tests.apoio_imagens import jpeg
 
 ORIGEM_OK = "http://localhost:5173"
 ORIGEM_RUIM = "http://evil.example"
-JPG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+JPG = jpeg()  # imagem de verdade: o upload decodifica a foto (ADR-0010)
 FOLGA_MULTIPART = 512 * 1024
 
 
@@ -236,6 +237,7 @@ def test_cabecalhos_de_seguranca_em_uploads(client, admin, sala_id):
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["content-disposition"] == "inline"
-    assert "sandbox" in r.headers["content-security-policy"]
-    assert "max-age" in r.headers["cache-control"]
+    assert r.headers["content-security-policy"] == "default-src 'none'; sandbox"
+    assert r.headers["cache-control"] == "public, max-age=31536000, immutable"  # contrato 1.4 §1.9
+    assert "cross-origin-resource-policy" not in r.headers
     assert client.get("/uploads/salas/999/nao-existe.jpg").headers["x-content-type-options"] == "nosniff"

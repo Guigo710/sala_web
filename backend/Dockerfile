@@ -1,6 +1,7 @@
-# Backend sala_web: FastAPI + Alembic + seed (ADR-0001)
+# Backend sala_web: FastAPI + Alembic + seed (ADR-0001). Roda igual no Compose e no Render (ADR-0009).
 FROM python:3.12-slim
 
+# UPLOAD_DIR: pasta das fotos antigas, só lida pela importação (ADR-0010); a API não grava nada nela.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -13,18 +14,21 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# Usuário sem privilégios (ticket 51), com uid/gid fixos: o serviço "uploads-permissoes" do Compose usa o número.
-# O código fica com root (só leitura para "app"); só /app/uploads é dele. Um volume nomeado novo
-# herda o dono desta pasta; um volume antigo, criado por root, é corrigido pelo "uploads-permissoes".
+# Usuário sem privilégios (ticket 51), com uid/gid fixos. O código fica com root (só leitura para "app").
+# Desde a rodada 5 (ADR-0010) o processo não grava em disco: as fotos ficam no banco.
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin app
 
 COPY . .
-RUN mkdir -p /app/uploads && chown app:app /app/uploads
+# Ponto de montagem do volume antigo de fotos (só leitura no Compose; não existe no Render).
+RUN mkdir -p /app/uploads
 
 USER 10001:10001
 
 EXPOSE 8000
 
-# Migrations -> seed idempotente -> API
-CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Migrations -> seed idempotente -> importação das fotos antigas (idempotente, nunca falha) -> API.
+# Porta: $PORT no Render (ele define a variável), 8000 no Compose. Um ÚNICO worker, de propósito: os limites
+# de tentativas (login, troca de senha) ficam em memória, por processo (ADR-0009, ADR-0007 adendo 2).
+# Não acrescente --workers.
+CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && python -m app.importar_fotos && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

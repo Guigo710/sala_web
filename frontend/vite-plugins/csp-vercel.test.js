@@ -66,6 +66,12 @@ describe('plugin', () => {
     expect(() => executar({ VERCEL: '1' }, {})).toThrow(/VITE_API_URL/);
     expect(() => executar({ VERCEL: '1' }, { VITE_API_URL: 'api.exemplo.com' })).toThrow(/VITE_API_URL/);
   });
+
+  it('com VERCEL=1 a API tem de ser https (o site do Vercel bloquearia http)', () => {
+    expect(() => executar({ VERCEL: '1' }, { VITE_API_URL: 'http://api.exemplo.com' })).toThrow(/https:\/\//);
+    // Fora do Vercel (Compose, desenvolvimento) http continua valendo.
+    expect(executar({}, { VITE_API_URL: 'http://localhost:8000' })).toBe(INDEX);
+  });
 });
 
 describe('vercel.json', () => {

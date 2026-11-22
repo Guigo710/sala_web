@@ -74,12 +74,14 @@ def criar_app() -> FastAPI:
 
     @app.get("/saude", tags=["saúde"], summary="Saúde da API e do banco")
     def saude() -> JSONResponse:
+        host = "?"
         try:
             with SessionLocal() as db:
+                host = db.get_bind().url.host or "(local)"
                 db.execute(text("SELECT 1"))
         except Exception as erro:  # noqa: BLE001
-            # Sem a URL nem o traceback (a mensagem do driver pode trazer a string de conexão): só host e tipo.
-            log.error("Banco indisponível em %s (%s)", config.host_banco, type(erro).__name__)
+            # Sem a URL nem o traceback (a URL tem a senha): só o host e o tipo do erro (ticket 63).
+            log.error("Banco indisponível em %s (%s)", host, type(erro).__name__)
             return JSONResponse(status_code=503, content={"status": "erro"})
         return JSONResponse(content={"status": "ok"})
 
